@@ -39,7 +39,7 @@ Cheats:
   cheat engine for it (my NES build has one).
 
 Look and feel:
-- Themes: Game Bub, DMG, GBC, GBA and NES, each with a dark mode.
+- Themes: Game Bub, DMG, GBC, GBA, NES and Sky (blue, after my Retro Bub case), each with a dark mode.
 - My "Retro Bub" logo, also in the boot animation, in the colors of the theme.
 - Long names of cores and files scroll, the core author stays visible, the lists scroll to the selected item.
 - Status bar: a clock with your time zone (UTC offset, daylight saving for Europe or North America, 24 hour clock)
