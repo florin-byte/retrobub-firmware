@@ -37,10 +37,6 @@ Game Boy Advance:
 Cheats:
 - Cheats chosen in the core menu, from a RetroArch `.cht` file next to the rom (same name as the rom). A core needs a
   cheat engine for it (my NES build has one).
-- When a `.cht` file has several cheats that are choices of the same thing, they become one list in the menu. For
-  example the RetroArch file for Double Dragon III on the NES has four cheats "Start on China", "Start on Japan",
-  "Start on Italy" and "Start on Egypt" (the level you start on). In the menu they are one "Start on" line where you
-  pick Off, China, Japan, Italy or Egypt, so you can't turn on two of them at the same time.
 
 Look and feel:
 - Themes: Game Bub, DMG, GBC, GBA and NES, each with a dark mode.
