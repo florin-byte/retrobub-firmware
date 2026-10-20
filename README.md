@@ -118,7 +118,6 @@ python3 generate_firmware_uf2.py --firmware target/xtensa-esp32s3-espidf/release
 - My own files (listed in `THIRD-PARTY.md`) are GPL-2.0-or-later (`LICENSE-GPL-V2`, `LICENSE-GPL-V3`). The firmware
   as a whole stays GPL-3.0-only, because it is Eli's GPL-3.0-only program.
 
-Everybody whose code is in here, and under which license: `THIRD-PARTY.md`. Thanks to Eli for the Game Bub, and to
-minuitfranck and Jeremy O'Brien for the parts I took from their ports.
+Everybody whose code is in here, and under which license: `THIRD-PARTY.md`. Thanks to Eli for the Game Bub.
 
 "Game Bub" is Eli's project and trademark, this is a community firmware. No bios and no games in here.
