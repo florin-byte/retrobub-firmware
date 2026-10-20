@@ -73,6 +73,7 @@ impl UiState {
         backend.set_hardware_version(crate::hwinfo::get_hardware_version().to_string().into());
         backend.set_hardware_serial(crate::hwinfo::get_serial_number().to_string().into());
         backend.set_firmware_version(env!("CARGO_PKG_VERSION").into());
+        backend.set_device_rev2(cfg!(feature = "rev2"));
         backend.set_sdcard_mounted(std::fs::exists("/sdcard").unwrap_or(false));
 
         // Status bar clock, the 12/24-hour preference and the theme, refreshed once per second.

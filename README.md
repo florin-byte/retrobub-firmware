@@ -45,6 +45,7 @@ Look and feel:
 - Status bar: a clock with your time zone (UTC offset, daylight saving for Europe or North America, 24 hour clock)
   and "CHG" while charging.
 - Rom files are found also with capital extensions (`GAME.GBA`).
+- On rev2 the tutorial at the first start shows a rev2 Game Bub (Eli's shows the rev4 one).
 
 ## Cores on the SD card
 
