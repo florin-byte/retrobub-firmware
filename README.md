@@ -38,6 +38,11 @@ Cheats:
 - Cheats chosen in the core menu, from a RetroArch `.cht` file next to the rom (same name as the rom). A core needs a
   cheat engine for it (my NES build has one).
 
+Controls (new, not in a release yet, build it from the source for now):
+- Swap A/B in each core's menu, saved per core. For now only my Game Gear core (v0.2.0) has it, Game Boy and GBA
+  get it after their next rebuild. Tested on rev2.
+- The platform has a Nearest scaling filter (no blending) for the cores that use the aspect scaler.
+
 Look and feel:
 - Themes: Game Bub, DMG, GBC, GBA, NES and Sky (blue, after my Retro Bub case), each with a dark mode.
 - My "Retro Bub" logo, also in the boot animation, in the colors of the theme.
@@ -61,6 +66,9 @@ file, the core writes the whole machine into its memory and answers with the siz
 `FILE_WRITE_END`). In the core's json: a file with `"on_demand": true` in `files.json`, and in `settings.json` a list
 with `"file_slots": <file id>` and two actions with `"file": <file id>` (one of them with `"load": true`). The Lynx
 README explains it step by step.
+
+Swap A/B for a core: add `"hardware": { "swap_ab": true }` to its `core.json`, only if its bitstream has the new
+platform register `0x1018`.
 
 ## Install
 
