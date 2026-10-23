@@ -1,16 +1,28 @@
 # Retro Bub firmware for the Game Bub
 
-This is my firmware for the [Game Bub](https://github.com/elipsitz/gamebub). It is Eli's firmware 1.1.0-beta2 with
+This is my firmware for the [Game Bub](https://github.com/elipsitz/gamebub). It includes Eli's 1.1.0-beta3 fixes with
 the things I added and fixed. The repo also has the FPGA framework and the built-in cores (boot, Game Boy / Game Boy
 Color and Game Boy Advance) with my fixes, so you can build all of it. It is not the official Game Bub firmware.
 
 The ready-to-flash files are in the [releases](../../releases).
 
-## Does it work?
+## Update prepared on 23 Oct 2026
 
-- rev2: yes, this is what I use every day.
-- rev4: it builds for rev4 and it should work, but it is not tested, because I don't own a rev4 Game Bub, only a
-  rev2 one. If you try it, keep Eli's firmware file at hand to go back (see Install).
+I tested the beta3 integration on my rev2: startup, GB/GBA speaker and headphone audio, GB save/load with music,
+GG/Lynx on-demand states and per-core Swap A/B, plus the requested SD-core runtime checks.
+Those console results used MCU commit `3035e84`. The version-only correction reports `1.1.0-beta3`
+(MCU commit `f3b5165`); the rebuilt binaries have not yet been reflashed for a startup/About check.
+The FPGA images remain unchanged at `a04f4e1`. The new rev4 build meets timing and package checks,
+but remains hardware-untested. Stock GG/Lynx containers are left for other users to test.
+
+The firmware version in About now comes from package version `1.1.0-beta3`. On the first boot after an
+update, the existing update notification can appear once. This metadata correction changes no emulation,
+save-state or remapping logic and needs no new FPGA build.
+
+This update includes the battery shutdown deadlock fix and 20/10/5% alerts, 10 MHz SPI read cap,
+optional file selection, shorter headphone startup and the USB storage B-button fix from beta3.
+The built-in GB/GBA cores also have the beta3 audio/core fixes. Physical GB cartridge reset, GBA Flash-save
+specific behavior, controlled critical-battery shutdown and dock/gamepad behavior were not separately verified.
 
 ## What is new compared to Eli's firmware
 
@@ -38,10 +50,12 @@ Cheats:
 - Cheats chosen in the core menu, from a RetroArch `.cht` file next to the rom (same name as the rom). A core needs a
   cheat engine for it (my NES build has one).
 
-Controls (new, not in a release yet, build it from the source for now):
-- Swap A/B in each core's menu, saved per core. For now only my Game Gear core (v0.2.0) has it, Game Boy and GBA
-  get it after their next rebuild. Tested on rev2.
-- The platform has a Nearest scaling filter (no blending) for the cores that use the aspect scaler.
+Controls:
+- Swap A/B in each rebuilt core's menu, saved per core, including Game Boy and GBA.
+- The framework-v2 list uses `0xF1001208`; `0xF1001018` is video darken. Copy matching JSON files and
+  bitstreams together. The old Swap A/B checkbox at `0x1018` must not be paired with a new framework-v2 bitstream.
+- Menus keep their original controls. Handheld remapping and docked gamepad remapping are separate.
+- The platform keeps the Nearest scaling filter for cores that use the aspect scaler.
 
 Look and feel:
 - Themes: Game Bub, DMG, GBC, GBA, NES and Sky (blue, after my Retro Bub case), each with a dark mode.
@@ -57,8 +71,10 @@ Look and feel:
 - Atari Lynx: https://github.com/florin-byte/gamebub-lynx
 - Sega Game Gear: https://github.com/florin-byte/gamebub-gg
 
-They work with Eli's firmware too, with this firmware you also get their save states (use the json files from their
-`sdcard/savestate-firmware/` folder).
+Use the matching new GG/Lynx archives with this firmware and choose the JSON files from
+`sdcard/savestate-firmware/`. Their stock `sdcard/cores/` alternative uses a four-slot container written
+at normal game exit; that stock path is left for other users to test. Individual `.ssN` files and stock
+containers are separate, with no automatic conversion.
 
 How the save states work: when you press Save State, the firmware sends the core `FILE_READ_START` for its State
 file, the core writes the whole machine into its memory and answers with the size, the firmware reads it and writes
@@ -67,20 +83,34 @@ file, the core writes the whole machine into its memory and answers with the siz
 with `"file_slots": <file id>` and two actions with `"file": <file id>` (one of them with `"load": true`). The Lynx
 README explains it step by step.
 
-Swap A/B for a core: add `"hardware": { "swap_ab": true }` to its `core.json`, only if its bitstream has the new
-platform register `0x1018`.
+Swap A/B for a rebuilt framework-v2 core: use `"hardware": { "button_remap": true }` in `core.json`.
+The firmware adds one Off/On list before Reset if JSON does not already contain it. Off writes
+`0x0B0A0908`, On writes `0x0A0B0908` at `0xF1001208`, setting ID `0x7FF1`. Old checkbox IDs/values are not reused.
 
 ## Install
 
-The release has one file per board: `retrobub-firmware-rev2.uf2` and `retrobub-firmware-rev4.uf2`. Each has the
-firmware and the built-in cores (boot, Game Boy, Game Boy Advance) for that board.
+Back up your SD core folders, settings and saves before updating. Use files for your board only.
+The update has `retrobub-firmware-rev2.uf2` and `retrobub-firmware-rev4.uf2`; each contains the application
+and matching built-in boot/GB/GBA images. UF2 pages do not include NVS, the bootloader or the DFU partition.
 
-- rev4: like Eli's firmware updates, in DFU mode: the Game Bub shows up as a USB drive, you copy the `.uf2` file on it
-  and it installs it and restarts. See Eli's guide for how to start DFU mode. The DFU checks the board in the file,
-  so a rev2 file will not go on a rev4. To go back, do the same with Eli's `.uf2` (the releases of his GitHub
-  repo, for example `gamebub-rev4_v1.0.2.uf2`).
-- rev2: I flash it with `espflash` (download mode: hold Home, press Power, USB-C connected). The release has the
-  firmware and the `system_data` image for that too.
+- rev4: install the rev4 UF2 in the existing Game Bub DFU mode, as in Eli's firmware-update guide.
+  Keep a backup and a known-good firmware to return to; this new rev4 build is hardware-untested.
+- rev2: use the espflash archive and its README. Hold Home, press Power with USB-C connected to enter
+  download mode. Read the complete 8 MiB flash backup first. Flash the supplied ELF and system_data together;
+  the instructions do not erase NVS. They assume the existing 1.1 partition layout (factory at 0x100000,
+  system_data at 0x600000); migrating from the old 0.1 layout is a separate operation.
+
+Check `system/` on the SD card before booting the update. If `boot.bit.hs`, `gameboy.bit.hs` or `gba.bit.hs`
+exist there, they override the internal images. Back them up and replace them with the matching files from
+the same board package, or move those three overrides off the card so the new internal images are used.
+Do not remove BIOS files or other system files. The rev2 espflash archive includes matching replacements.
+The UF2-only route can use the new internal images after retiring the three old overrides.
+
+Update SD-core JSON files and bitstreams as matched sets from each core's maintainer. The new GG/Lynx
+packages provide both stock and on-demand alternatives; choose the on-demand folder for this firmware.
+No other maintainer's core is included in this firmware package. To return to a previous installation,
+restore its matching firmware, built-in overrides and core files together; the rev2 full-flash restoration
+command is in the espflash README. Saves/settings have their own backups.
 
 ## Building
 
@@ -89,10 +119,13 @@ Firmware (ESP-IDF 5.4.3, Rust with the `esp` toolchain from [espup](https://gith
 
 ```bash
 . ~/export-esp.sh
+unset IDF_PATH IDF_PYTHON_ENV_PATH        # avoid an exported ESP-IDF 5.3.1 environment
 cargo build --release --features rev4        # or rev2
 ```
 
-Build from a git clone, the build needs the commit hash.
+Build from a git clone, the build needs the commit hash. Release build-inputs include the exact dependency
+lock used for the shipped firmware; restore it to firmware/handheld/Cargo.lock and use --locked to keep
+those dependency versions. The repository currently ignores Cargo.lock.
 
 The built-in cores, from the root of the repo (Java 17, Python 3 with `edalize==0.6.7`, Vivado; I use 2025.2):
 
@@ -101,6 +134,9 @@ python3 scripts/rev2/make_vivado_bundle.py --core-class net.gamebub.core.boot.Ha
 python3 scripts/rev2/make_vivado_bundle.py --core-class net.gamebub.core.gameboy.HandheldGameboy --name gameboy --target gamebub_rev4
 python3 scripts/rev2/make_vivado_bundle.py --core-class net.gamebub.core.gba.HandheldGba --name gba --target gamebub_rev4
 ```
+
+The accepted GBA rev4 implementation used Explore P&R on the original synthesis checkpoint.
+Implementation directives can change timing without RTL changes; check setup and hold for every build.
 
 Run Vivado in each bundle under `dist/vivado/` (`make` on Linux, `build.bat` on Windows), then make the compressed
 `.bit.hs` files the firmware loads:

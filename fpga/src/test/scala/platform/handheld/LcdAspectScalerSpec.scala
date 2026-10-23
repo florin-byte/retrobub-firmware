@@ -150,7 +150,7 @@ class LcdAspectScalerSpec extends AnyFunSuite {
     run(Seq(VideoScalerV0.Mode(0, 0, 160, 144)), 0, VideoScalerV0.FilterSharpBilinear, fbWidth = 160, fbHeight = 144)
   }
 
-  // Lynx (the gamebub-lynx core): the screen upright or rotated in a 160x160 framebuffer.
+  // Lynx (net.gamebub.core.lynx.HandheldLynx): the screen upright or rotated in a 160x160 framebuffer.
   val lynxModes = Seq(VideoScalerV0.Mode(0, 29, 160, 102), VideoScalerV0.Mode(29, 0, 102, 160))
 
   test("geometry: Lynx modes on 480x320 at exactly 3x and 2x") {
