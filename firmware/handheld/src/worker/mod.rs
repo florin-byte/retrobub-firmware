@@ -13,6 +13,9 @@ use crate::{kvs, ui};
 
 #[derive(Debug)]
 pub enum Message {
+    LinkStart,
+    LinkStop,
+    LinkMemory(&'static str),
     /// An interrupt request from the FPGA
     FpgaIrq(u32),
     /// The headphone state has changed
@@ -38,8 +41,11 @@ pub enum Message {
     FetchCoreList,
     /// Start running a core (ID)
     RunCore(String),
-    /// Exit the current core (or cancel loading)
-    ExitCore,
+    /// Exit the current core (or cancel loading). The sender is told when the game's memory
+    /// (save buffers, radio) is released, before the boot bitstream loads.
+    ExitCore(Option<mpsc::Sender<()>>),
+    /// Dual Core Link waiting room: play without the saves
+    SyncBlankSave,
     /// A file was selected for the core (could be a directory).
     CoreFileSelected(PathBuf),
     /// Core file selection was cancelled.
@@ -50,6 +56,14 @@ pub enum Message {
     CoreSettingsLoad,
     /// Core setting changed
     CoreSettingChanged { id: u16, value: u32 },
+    /// Load the Cheats page
+    CheatsLoad,
+    /// A cell of the Cheats page was pressed
+    CheatActivate(u16),
+    /// All cheats off
+    CheatsAllOff,
+    /// The Cheats page opened or closed (the game is darkened under it)
+    CheatsPageOpen(bool),
 }
 
 /// Send a message to the worker threads.
@@ -70,9 +84,20 @@ pub fn start() {
         .name("Worker".to_string())
         .stack_size(16 * 1024)
         .spawn(move || {
-            while let Ok(message) = receiver.recv() {
-                log::debug!("Dispatch {:?}", message);
-                dispatch(message);
+            let mut last_link_poll = std::time::Instant::now();
+            loop {
+                match receiver.recv_timeout(std::time::Duration::from_millis(500)) {
+                    Ok(message) => {
+                        log::debug!("Dispatch {:?}", message);
+                        dispatch(message);
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+                if last_link_poll.elapsed() >= std::time::Duration::from_millis(500) {
+                    last_link_poll = std::time::Instant::now();
+                    crate::link::poll();
+                }
             }
         })
         .unwrap();
@@ -82,6 +107,9 @@ static SENDER: OnceLock<mpsc::Sender<Message>> = OnceLock::new();
 
 fn dispatch(message: Message) {
     match message {
+        Message::LinkStart => crate::link::start(),
+        Message::LinkStop => crate::link::stop(),
+        Message::LinkMemory(point) => crate::link::log_memory_now(point),
         Message::FpgaIrq(irq_mask) => {
             if (irq_mask & fpga::Irq::ModuleVblank.as_flag()) != 0 {
                 // Module vblank
@@ -145,12 +173,17 @@ fn dispatch(message: Message) {
         }
         Message::FetchCoreList => CoreManager::lock().list_cores(),
         Message::RunCore(id) => CoreManager::lock().run_core(&id, false),
-        Message::ExitCore => CoreManager::lock().exit_core(),
+        Message::ExitCore(released) => CoreManager::lock().exit_core(released),
+        Message::SyncBlankSave => CoreManager::lock().sync_blank_save(),
         Message::CoreFileSelected(file) => CoreManager::lock().handle_file_selected(file),
         Message::CoreFileCancelled => CoreManager::lock().cancel_file_select(),
         Message::CoreFocusChanged(focused) => CoreManager::lock().focus_changed(focused),
         Message::CoreSettingsLoad => CoreManager::lock().ui_load_settings(),
         Message::CoreSettingChanged { id, value } => CoreManager::lock().setting_changed(id, value),
+        Message::CheatsLoad => CoreManager::lock().ui_load_cheats(),
+        Message::CheatActivate(id) => CoreManager::lock().cheat_activate(id),
+        Message::CheatsAllOff => CoreManager::lock().cheats_all_off(),
+        Message::CheatsPageOpen(open) => CoreManager::lock().cheats_page_open(open),
         #[allow(unreachable_patterns)]
         _ => {
             log::warn!("Unhandled message: {:?}", message);

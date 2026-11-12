@@ -1,0 +1,30 @@
+# GB-150: SMB Deluxe to VS GAME. Start on the title, down twice, A. Player 2 confirms 37 frames after player 1.
+700 0 8
+700 1 8
+708 0 0
+708 1 0
+800 0 128
+800 1 128
+808 0 0
+808 1 0
+840 0 128
+840 1 128
+848 0 0
+848 1 0
+880 0 1
+888 0 0
+917 1 1
+925 1 0
+# Into the race: both confirm the level.
+1000 0 1
+1008 0 0
+1010 1 1
+1018 1 0
+1080 0 1
+1088 0 0
+1090 1 1
+1098 1 0
+1160 0 8
+1168 0 0
+1170 1 8
+1178 1 0

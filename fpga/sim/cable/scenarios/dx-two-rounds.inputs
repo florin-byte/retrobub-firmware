@@ -1,0 +1,147 @@
+# Verified title selection: Start reaches title; Down selects 2 PLAYER.
+360 0 8
+360 1 8
+362 0 0
+362 1 0
+390 0 128
+390 1 128
+392 0 0
+392 1 0
+420 0 8
+420 1 8
+422 0 0
+422 1 0
+# Return from unintended 1P menu; selection input was not accepted during title transition.
+540 0 2
+540 1 2
+550 0 0
+550 1 0
+# DX: move up from ENTRY to 2PLAYER. GB: soft reset from 1P setup.
+660 0 64
+660 1 64
+668 0 0
+668 1 0
+# Title input probe: Select after transition is complete.
+720 0 4
+720 1 4
+728 0 0
+728 1 0
+# Fresh SRAM requires name registration before 1P/2P are enabled (Nintendo manual).
+780 0 1
+780 1 1
+788 0 0
+788 1 0
+840 0 1
+840 1 1
+848 0 0
+848 1 0
+# Enter one name character, then probe Start to finish or focus END.
+900 0 1
+900 1 1
+908 0 0
+908 1 0
+930 0 8
+930 1 8
+938 0 0
+938 1 0
+# Profile A registered; leave profile screen for enabled title options.
+1020 0 2
+1020 1 2
+1028 0 0
+1028 1 0
+# Name is registered; Down selects 2PLAYER from enabled 1PLAYER.
+1080 0 128
+1080 1 128
+1088 0 0
+1088 1 0
+# Verified 2PLAYER on both titles; stagger Start to avoid perfectly simultaneous initiation.
+1140 0 8
+1148 0 0
+1152 1 8
+1160 1 0
+# Select the registered A profile for 2P on both sides.
+1260 0 1
+1260 1 1
+1268 0 0
+1268 1 0
+# Verified VS button selected on both setup screens; confirm VS.
+1380 0 1
+1380 1 1
+1388 0 0
+1388 1 0
+# Start VS after profile/setup confirmation, with staggered button timing.
+1500 0 8
+1508 0 0
+1512 1 8
+1520 1 0
+# Verified VS statistics/PUSH START screen; start first actual round.
+1740 0 8
+1748 0 0
+1752 1 8
+1760 1 0
+# First-round normal-loss drive: repeated Down presses on side 0 only.
+1980 0 128
+1992 0 0
+2000 0 128
+2012 0 0
+2020 0 128
+2032 0 0
+2040 0 128
+2052 0 0
+2060 0 128
+2072 0 0
+2080 0 128
+2092 0 0
+2100 0 128
+2112 0 0
+2120 0 128
+2132 0 0
+2140 0 128
+2152 0 0
+2160 0 128
+2172 0 0
+2180 0 128
+2192 0 0
+2200 0 128
+2212 0 0
+2220 0 128
+2232 0 0
+2240 0 128
+2252 0 0
+2260 0 128
+2272 0 0
+2280 0 128
+2292 0 0
+2300 0 128
+2312 0 0
+2320 0 128
+2332 0 0
+# Continue first-round drop until normal game-over.
+2400 0 128
+2412 0 0
+2420 0 128
+2432 0 0
+2440 0 128
+2452 0 0
+2460 0 128
+2472 0 0
+2480 0 128
+2492 0 0
+2500 0 128
+2512 0 0
+2520 0 128
+2532 0 0
+2540 0 128
+2552 0 0
+2560 0 128
+2572 0 0
+# Verified YOU LOSE / YOU WIN normal result on both ends; advance to next-round screen.
+2760 0 8
+2768 0 0
+2772 1 8
+2780 1 0
+# Verified WIN 0/1 next-round screen after first game; start round 2 without reset.
+2880 0 8
+2888 0 0
+2892 1 8
+2900 1 0

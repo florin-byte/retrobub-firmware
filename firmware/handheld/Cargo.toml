@@ -18,6 +18,9 @@ debug = true    # Symbols are nice and they don't increase the size on Flash
 opt-level = "z"
 
 [features]
+fast-link-spi = []
+link-diag = ["fast-link-spi"] # Boot-time wireless console diagnostic; opt-in only
+link-bench = ["link-diag"] # Explicit radio-only measurement image; no game bridge
 default = ["std", "embassy", "esp-idf-svc/native"]
 rev1 = ["has_io_expander", "has_ili9488", "has_max17048"]  # Build for handheld revision 1
 rev2 = ["has_io_expander", "has_ili9488", "has_max17048"]  # Build for handheld revision 2
@@ -87,6 +90,10 @@ bindings_header = "bindings_esp_tinyusb.h"
 
 [[package.metadata.esp-idf-sys.extra_components]]
 remote_component = { name = "espressif/tinyusb", version = "^0.19.0" }
+
+[[package.metadata.esp-idf-sys.extra_components]]
+component_dirs = ["components/cwl"]
+bindings_header = "bindings_cwl.h"
 
 [patch.crates-io]
 esp-idf-sys = { git = "https://github.com/esp-rs/esp-idf-sys.git", rev = "a9356d9" }

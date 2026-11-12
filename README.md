@@ -6,6 +6,27 @@ Color and Game Boy Advance) with my fixes, so you can build all of it. It is not
 
 The ready-to-flash files are in the [releases](../../releases).
 
+## Update prepared on 12 Nov 2026
+
+This one adds wireless link for Game Boy, Game Boy Color and Game Boy Advance, and a Cheats page.
+
+- **Wireless link**: two Game Bubs play link games over the air, no cable and no pairing. Start the game with Play,
+  press Home, open Wireless link and choose Start searching on both. GB/GBC uses the same protocol as the ModRetro
+  Chromatic (Shiny Relay). GBA is between two Game Bubs.
+- **Dual Core Link**: each console runs both players' games and only the buttons travel over the air, so the game runs
+  at full speed. It needs two files on the SD card (`system/gameboy-dual.bit.hs`, `system/gba-dual.bit.hs`, they are in
+  the release) because the two-core bitstreams do not fit inside the console. Tick Dual Core Link in Settings > Core,
+  then the game asks Play or Dual Core Link. If your saves are different you can play without them; the files on the
+  card are not touched. What you do in a Dual Core Link session is not saved.
+- **Cheats**: a Cheats page in the game menu. Put `.cht` files next to the ROM or in `/cheats/<system>/` on the card.
+
+I do not have a rev4. The rev4 files are built from the same source and should work, but nobody has run them yet, so
+please tell me how it goes.
+
+I also found an old bug in the Game Boy CPU: an interrupt that arrived exactly while another one was being
+acknowledged was lost. With the wireless link this froze a game about once a minute. It is fixed in this update
+(`fpga/src/main/scala/gameboy/cpu/Cpu.scala`).
+
 ## Update prepared on 23 Oct 2026
 
 I tested the beta3 integration on my rev2: startup, GB/GBA speaker and headphone audio, GB save/load with music,
@@ -36,6 +57,14 @@ Save states and saves:
 - The previous battery save is kept as `<rom>.sav.bak` when it changes, so a save that goes wrong can be recovered.
   This one is new, I am still testing it.
 - A core that says its save is empty does not get an empty `.sav` on the card any more.
+
+Wireless link (new on 12 Nov 2026):
+- Wireless link for GB, GBC and GBA over ESP-NOW (`firmware/handheld/components/cwl`, `firmware/handheld/src/link`).
+  The radio starts only when you ask for it and it is released when you leave the game.
+- Dual Core Link for GB, GBC and GBA: a second, hidden core in the bitstream runs the other player's game, and the two
+  consoles keep the buttons in step frame by frame. Games with a clock or a sensor, and real cartridges, fall back to
+  the ordinary Wireless link.
+- In-game Cheats page, and cheat files from `/cheats` on the card.
 
 Game Boy / Game Boy Color core:
 - Fixes from my older rev2 firmware: the HALT bug, IE / IF register bits, the P1 select bits, MBC1 RAM banking,

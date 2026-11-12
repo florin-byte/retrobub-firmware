@@ -5,10 +5,13 @@ import { Button } from "../components/button.slint";
 import { ButtonList } from "../components/button_list.slint";
 import { CoreSettingList } from "cores/core_settings.slint";
 import { CoreSettingType } from "cores/types.slint";
+import { CheatsPage } from "cheats.slint";
 
 export component GameScreen inherits ScreenBase {
     private property <bool> menu-open: false;
     private property <bool> settings-open: false;
+    private property <bool> cheats-open: false;
+    private property <bool> partners-open: false;
     forward-focus: i-focus-scope;
 
     // /** todo: dev remove */
@@ -27,7 +30,25 @@ export component GameScreen inherits ScreenBase {
             i-list.focus();
         } else {
             settings-open = false;
+            root.set-cheats-open(false);
+            Backend.link-page-open = false;
+            partners-open = false;
             i-focus-scope.focus();
+        }
+    }
+
+    /// The Cheats page covers the screen (no status bar) over the darkened game.
+    protected function set-cheats-open(open: bool) {
+        if (open == root.cheats-open) {
+            return;
+        }
+        root.cheats-open = open;
+        Backend.cheats-page-open(open);
+        Global.ui-status-bar = !open && root.menu-open;
+        if (open) {
+            Backend.cheats-load();
+        } else if (root.menu-open) {
+            i-list.focus();
         }
     }
 
@@ -39,6 +60,21 @@ export component GameScreen inherits ScreenBase {
             if (event.text == "Power") {
                 set-menu-open(true);
             }
+            if event.text == "b" && !root.menu-open && Backend.link-room-open && Backend.link-room-can-exit {
+                Backend.game-exit();
+            }
+            if event.text == "a" && !root.menu-open && Backend.link-room-open && Backend.link-room-can-accept {
+                Backend.link-room-accept();
+            }
+            if event.text == "b" && Backend.link-page-open {
+                if partners-open {
+                    partners-open = false;
+                    i-link-list.focus();
+                } else {
+                    Backend.link-page-open = false;
+                    i-list.focus();
+                }
+            }
             if event.text == "b" && settings-open {
                 settings-open = false;
                 i-list.focus();
@@ -47,7 +83,7 @@ export component GameScreen inherits ScreenBase {
         }
 
         menu := Rectangle {
-            visible: menu-open;
+            visible: menu-open && !cheats-open;
             background: Theme.surface;
             border-color: Theme.border;
             border-width: 1px;
@@ -55,14 +91,21 @@ export component GameScreen inherits ScreenBase {
             height: i-list.min-height;
 
             i-list := ButtonList {
-                items: ["Return", "Settings", "Exit Core"];
+                items: Backend.cheats-available
+                    ? (Backend.game-wireless-link ? ["Return", "Settings", "Cheats", "Wireless link", "Exit Core"] : ["Return", "Settings", "Cheats", "Exit Core"])
+                    : (Backend.game-wireless-link ? ["Return", "Settings", "Wireless link", "Exit Core"] : ["Return", "Settings", "Exit Core"]);
                 on-selected(item) => {
                     if (item == 0) {
                         root.set-menu-open(false);
                     } else if (item == 1) {
                         Backend.game-settings-load();
                         root.settings-open = true;
-                    } else if (item == 2) {
+                    } else if (item == 2 && Backend.cheats-available) {
+                        root.set-cheats-open(true);
+                    } else if (Backend.game-wireless-link && item == (Backend.cheats-available ? 3 : 2)) {
+                        Backend.link-page-open = true;
+                        i-link-list.focus();
+                    } else {
                         Backend.game-exit();
                     }
                 }
@@ -86,6 +129,92 @@ export component GameScreen inherits ScreenBase {
                 height: parent.height - 4px;
                 init => {
                     self.focus();
+                }
+            }
+        }
+
+        if cheats-open: CheatsPage {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: root.height;
+            init => {
+                self.focus();
+            }
+            close => {
+                root.set-cheats-open(false);
+            }
+        }
+
+        Rectangle {
+            visible: Backend.link-page-open;
+            background: Theme.surface;
+            border-color: Theme.border;
+            border-width: 1px;
+            width: root.width;
+            height: root.height;
+            VerticalLayout {
+                padding: 4px;
+                spacing: 2px;
+                // Four entries must fit 160 px (rev2): no title line, a tighter list.
+                Text { text: Backend.link-status; color: Theme.text; horizontal-alignment: center; }
+                Text { text: Backend.link-detail; color: Theme.text-dim; horizontal-alignment: center; }
+                i-link-list := ButtonList {
+                    padding: 2px;
+                    // The radio rate of the classic GB/GBC link, switched by hand (GB-162 D2; default 1 Mbps).
+                    items: [Backend.link-active ? "Turn off" : "Start searching", "Choose partner",
+                        Backend.link-fast-gb ? "GB/GBC radio: 12 Mbps" : "GB/GBC radio: 1 Mbps", "Back"];
+                    on-selected(item) => {
+                        if item == 0 { Backend.link-toggle(); }
+                        else if item == 1 { Backend.link-partners-load(); partners-open = true; }
+                        else if item == 2 { Backend.link-fast-gb-toggle(); }
+                        else { Backend.link-page-open = false; i-list.focus(); }
+                    }
+                }
+            }
+        }
+
+        if partners-open: Rectangle {
+            background: Theme.surface;
+            width: root.width;
+            height: root.height;
+            VerticalLayout {
+                padding: 4px;
+                Text { text: "Choose partner · B: Back"; color: Theme.text; horizontal-alignment: center; }
+                ButtonList {
+                    init => { self.focus(); }
+                    items: Backend.link-partners;
+                    on-selected(item) => {
+                        Backend.link-partner-choose(item);
+                        partners-open = false;
+                        i-link-list.focus();
+                    }
+                }
+            }
+        }
+
+        // GB-162: waiting room. Plain lines from the session state, so more players or more
+        // steps only change the text.
+        if Backend.link-room-open && !menu-open && !Backend.core-is-loading: Rectangle {
+            background: Theme.surface;
+            border-color: Theme.border;
+            border-width: 1px;
+            width: i-room-layout.min-width;
+            height: i-room-layout.min-height;
+
+            i-room-layout := VerticalLayout {
+                padding: 6px;
+                spacing: 2px;
+                Text { text: Backend.link-room-status; color: Theme.text; horizontal-alignment: center; }
+                for line in Backend.link-room-lines: Text {
+                    text: line;
+                    color: Theme.text-dim;
+                    horizontal-alignment: center;
+                }
+                if Backend.link-room-hint != "": Text {
+                    text: Backend.link-room-hint;
+                    color: Theme.text;
+                    horizontal-alignment: center;
                 }
             }
         }

@@ -18,7 +18,7 @@ use ::slint::{
 
 use crate::device::{Device, DisplayMode};
 use crate::input::{self, InputManager};
-pub use crate::ui::state::CoreSettingUiItem;
+pub use crate::ui::state::{CheatsPage, CheatsPageCell, CheatsPageRow, CoreSettingUiItem};
 use crate::worker;
 pub use state::notifications::Notification;
 
@@ -45,7 +45,7 @@ pub enum Message {
     /// Redraw the entire screen (e.g. after a display change)
     Redraw,
     /// Go to the "Game" screen
-    EnterGame,
+    EnterGame { wireless_link: bool },
     /// Enter the error screen, and show the given error
     FatalError(String),
     /// Internal input state changed
@@ -78,6 +78,10 @@ pub enum Message {
     CoreLoadProgress(f32),
     /// Core settings
     CoreSettingsList(Vec<CoreSettingUiItem>),
+    /// Whether the game has cheats (the in-game menu then has Cheats)
+    CheatsAvailable(bool),
+    /// The Cheats page
+    CheatsPage(CheatsPage),
 }
 
 /// Send a message to the UI thread.
@@ -127,6 +131,8 @@ pub struct UI {
     state: Rc<RefCell<UiState>>,
     button_event_detector: buttons::ButtonEventDetector,
     idle_timer: Timer,
+    #[cfg(feature = "link-diag")]
+    cheats_render_probe: bool,
 }
 
 impl UI {
@@ -195,6 +201,8 @@ impl UI {
             root,
             button_event_detector: buttons::ButtonEventDetector::new(),
             idle_timer,
+            #[cfg(feature = "link-diag")]
+            cheats_render_probe: false,
         };
         ui
     }
@@ -219,6 +227,13 @@ impl UI {
 
             // Render UI if needed.
             self.window.draw_if_needed(|renderer| {
+                #[cfg(feature = "link-diag")]
+                let probe_cheats = std::mem::take(&mut self.cheats_render_probe);
+                #[cfg(feature = "link-diag")]
+                if probe_cheats {
+                    crate::link::log_memory_now("cheats-before-render");
+                }
+
                 let mut device = Device::lock();
 
                 let render_start = Instant::now();
@@ -229,6 +244,10 @@ impl UI {
                     };
                     renderer.render_by_line(&mut line_renderer);
                 };
+                #[cfg(feature = "link-diag")]
+                if probe_cheats {
+                    crate::link::log_memory_now("cheats-after-render");
+                }
                 let render_duration = render_start.elapsed();
                 log::info!("Render + display {}ms", render_duration.as_millis() as u32,);
 
@@ -280,7 +299,9 @@ impl UI {
                     .renderer
                     .set_repaint_buffer_type(RepaintBufferType::NewBuffer);
             }
-            Message::EnterGame => {
+            Message::EnterGame { wireless_link } => {
+                self.root.global::<slint::Backend>().set_link_page_open(false);
+                self.root.global::<slint::Backend>().set_game_wireless_link(wireless_link);
                 self.root
                     .global::<slint::Backend>()
                     .set_core_is_loading(false);
@@ -341,6 +362,17 @@ impl UI {
             }
             Message::CoreSettingsList(items) => {
                 self.state.borrow_mut().game_settings_list(items);
+            }
+            Message::CheatsAvailable(available) => {
+                self.state.borrow_mut().game_cheats_available(available);
+            }
+            Message::CheatsPage(page) => {
+                #[cfg(feature = "link-diag")]
+                {
+                    crate::link::log_memory_now("cheats-before-model");
+                    self.cheats_render_probe = true;
+                }
+                self.state.borrow_mut().game_cheats_page(page);
             }
         }
     }

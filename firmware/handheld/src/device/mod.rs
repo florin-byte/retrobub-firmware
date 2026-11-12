@@ -537,6 +537,15 @@ impl Device<'_> {
                 // and never used at the same time (either read *or* write are used at any time).
                 // There doesn't appear to be any other way to use multiple clock speeds.
                 let cs_pin = unsafe { pin_fpga_spi_cs.clone_unchecked() };
+                #[cfg(feature = "fast-link-spi")]
+                let cs = gpio::Pin::pin(&cs_pin);
+                #[cfg(feature = "fast-link-spi")]
+                let spi = drivers::fpga::SpiDataDriver::new(
+                    SpiSharedDeviceDriver::new(fpga_spi_driver, &config).unwrap(),
+                    cs_pin,
+                    cs,
+                ).unwrap();
+                #[cfg(not(feature = "fast-link-spi"))]
                 let spi = SpiSoftCsDeviceDriver::new(
                     SpiSharedDeviceDriver::new(fpga_spi_driver, &config).unwrap(),
                     cs_pin,

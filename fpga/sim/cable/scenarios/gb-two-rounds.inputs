@@ -1,0 +1,117 @@
+# Verified title selection: Start reaches title; Down selects 2 PLAYER.
+360 0 8
+360 1 8
+362 0 0
+362 1 0
+390 0 128
+390 1 128
+392 0 0
+392 1 0
+420 0 8
+420 1 8
+422 0 0
+422 1 0
+# Return from unintended 1P menu; selection input was not accepted during title transition.
+540 0 2
+540 1 2
+550 0 0
+550 1 0
+# DX: move up from ENTRY to 2PLAYER. GB: soft reset from 1P setup.
+660 0 15
+660 1 15
+668 0 0
+668 1 0
+# Dismiss copyright after soft reset, then pause on title.
+960 0 8
+960 1 8
+968 0 0
+968 1 0
+# GB title: Select toggles player count; only side 0 initiates the link.
+1080 0 4
+1088 0 0
+# Verified 2PLAYER selection on side 0; side 1 remains on title as passive peer.
+1200 0 8
+1208 0 0
+# Both sides reached 2P setup; Mario confirms music.
+1320 0 8
+1328 0 0
+# Verified MARIO VS LUIGI handicap screen; Mario starts round 1.
+1440 0 8
+1448 0 0
+# Round 1: accelerate only Mario to produce an ordinary loss.
+1560 0 128
+1860 0 0
+# Both boards show first active pieces; keep Mario dropping until a normal loss.
+1860 0 128
+2460 0 0
+# Fresh Down presses after first-piece initialization; release between pulses.
+2468 0 128
+2480 0 0
+2488 0 128
+2500 0 0
+2508 0 128
+2520 0 0
+2528 0 128
+2540 0 0
+2548 0 128
+2560 0 0
+2568 0 128
+2580 0 0
+2588 0 128
+2600 0 0
+2608 0 128
+2620 0 0
+2628 0 128
+2640 0 0
+2648 0 128
+2660 0 0
+2668 0 128
+2680 0 0
+2688 0 128
+2700 0 0
+2708 0 128
+2720 0 0
+2728 0 128
+2740 0 0
+2748 0 128
+2760 0 0
+2768 0 128
+2780 0 0
+2788 0 128
+2800 0 0
+2808 0 128
+2820 0 0
+# First-round normal-loss drive: repeated Down presses on side 0 only.
+2880 0 128
+2892 0 0
+2900 0 128
+2912 0 0
+2920 0 128
+2932 0 0
+2940 0 128
+2952 0 0
+2960 0 128
+2972 0 0
+2980 0 128
+2992 0 0
+3000 0 128
+3012 0 0
+3020 0 128
+3032 0 0
+3040 0 128
+3052 0 0
+3060 0 128
+3072 0 0
+3080 0 128
+3092 0 0
+3100 0 128
+3112 0 0
+3120 0 128
+3132 0 0
+3140 0 128
+3152 0 0
+3160 0 128
+3172 0 0
+# Verified normal round-1 result: LUIGI wins, PUSH START. Mario advances.
+3240 0 8
+3248 0 0

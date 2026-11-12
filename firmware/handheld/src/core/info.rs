@@ -47,6 +47,10 @@ pub struct CoreCheats {
     /// The core's capacity (MiSTer's CODES: 32).
     #[serde(default = "default_max_codes")]
     pub max_codes: u32,
+    /// The system's folder under `/sdcard/cheats/` (libretro-database's `cht/<system>`, e.g. "Sega - Game Gear"),
+    /// where `<rom name>.cht` is looked for when the ROM has no `.cht` next to it.
+    #[serde(default)]
+    pub folder: Option<String>,
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -54,6 +58,17 @@ pub struct CoreCheats {
 pub enum CheatFormat {
     /// NES: Game Genie (6 / 8 letters), raw `AAAA:VV` and `AAAA?CC:VV`.
     Nes,
+    /// Master System / Game Gear: Game Genie (`XXX-YYY`, `XXX-YYY-ZZZ`), Pro Action Replay (`00AA-AAVV`) and
+    /// raw `AAAA:VV` (Genesis Plus GX's decode_cheat).
+    Sms,
+    /// Super Nintendo: Pro Action Replay (`AAAAAAVV`), Game Genie (`XXXX-XXXX`) and raw `AAAAAA:VV` (snes9x).
+    Snes,
+    /// Mega Drive: Game Genie (`XXXX-XXXX`) and Pro Action Replay (`AAAAAA:DDDD`, `AAAAAA:DD`) (Genesis Plus GX).
+    Md,
+    /// A format this firmware does not know: the core loads without cheats (a core.json written for a newer
+    /// firmware must not make the core disappear from the list).
+    #[serde(other)]
+    Unknown,
 }
 
 fn default_max_codes() -> u32 {

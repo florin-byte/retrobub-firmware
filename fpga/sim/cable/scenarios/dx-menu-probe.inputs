@@ -1,0 +1,9 @@
+# frame side button-mask (A=1 B=2 Select=4 Start=8 Right=16 Left=32 Up=64 Down=128)
+360 0 8
+362 0 0
+360 1 8
+362 1 0
+420 0 8
+422 0 0
+420 1 8
+422 1 0

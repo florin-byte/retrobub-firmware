@@ -18,6 +18,7 @@ mod hwinfo;
 mod input;
 mod kvs;
 mod led;
+pub mod link;
 mod power;
 pub mod ui;
 mod util;
@@ -82,6 +83,7 @@ fn main() -> anyhow::Result<()> {
 
     // Setup workers.
     worker::start();
+    link::log_memory("boot-before-radio");
     power::PowerManager::start(&mut device);
 
     // Initial programming FPGA

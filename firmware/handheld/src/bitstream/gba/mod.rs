@@ -53,6 +53,9 @@ fn rom_spi_command() -> fpga::SpiCommand {
     fpga::SpiCommand::new(fpga::FpgaSpiWordSize::Bits32)
 }
 const FILE_SAVE: u16 = 1;
+/// GB-156: with two cores per console both EWRAMs fill the SRAM, so the two cartridge saves
+/// (128 KiB each) sit at the top of SDRAM (HandheldGba.DualBackupBase). The ROM must end below.
+const SYNC_SAVE_BASE: [u32; 2] = [0x01FC_0000, 0x01FE_0000];
 const FILE_BIOS: u16 = 2;
 const FILE_CONFIG_OVERRIDE: u16 = 3;
 
@@ -186,6 +189,10 @@ pub struct Gba {
     rtc_state: Option<RtcState>,
     /// Classic NES Series / Famicom Mini ROM layout fix, see `NesSeriesRom`.
     nes_series_rom: NesSeriesRom,
+    /// CRC of the ROM header and the ROM size: what both consoles must share for GB-156.
+    rom_id: u32,
+    /// This game runs as two cores with frame-locked buttons (GB-156).
+    sync: bool,
     /// Bytes of the ROM loaded so far.
     rom_loaded: u32,
 }
@@ -231,7 +238,91 @@ impl Gba {
             rtc_state: None,
             nes_series_rom: NesSeriesRom::No,
             rom_loaded: 0,
+            rom_id: 0,
+            sync: false,
         }
+    }
+
+    fn crc32(mut crc: u32, data: &[u8]) -> u32 {
+        for &byte in data {
+            crc ^= byte as u32;
+            for _ in 0..8 {
+                crc = (crc >> 1) ^ (0xEDB8_8320 & (crc & 1).wrapping_neg());
+            }
+        }
+        crc
+    }
+
+    /// GB-156: give both cores the save just loaded at the start of the SRAM: copy it to the
+    /// two save areas in SDRAM, read both back and return the CRC for the partner check.
+    fn sync_copy_save(device: &mut Device, size: u32) -> Result<u32, String> {
+        const SRAM: u32 = 0x4000_0000;
+        let clock = Some(Hertz(5_000 * 1000 * 2).min(fpga::MAX_SPI_READ_CLOCK));
+        let sram = || fpga::SpiCommand::new(fpga::FpgaSpiWordSize::Bits16);
+        let mut buf = vec![0u8; 2048];
+        let mut crc = 0xFFFF_FFFFu32;
+        let mut pos = 0u32;
+        while pos < size {
+            let n = ((size - pos) as usize).min(buf.len());
+            device.fpga.spi_read(clock, sram(), SRAM + pos, &mut buf[..n])
+                .map_err(|_| "sync: SRAM read failed")?;
+            crc = Self::crc32(crc, &buf[..n]);
+            for base in SYNC_SAVE_BASE {
+                device.fpga.spi_write(clock, rom_spi_command(), ROM_ADDRESS + base + pos, &buf[..n])
+                    .map_err(|_| "sync: SDRAM write failed")?;
+            }
+            pos += n as u32;
+        }
+        for base in SYNC_SAVE_BASE {
+            let mut copy = 0xFFFF_FFFFu32;
+            let mut pos = 0u32;
+            while pos < size {
+                let n = ((size - pos) as usize).min(buf.len());
+                device.fpga.spi_read(clock, rom_spi_command(), ROM_ADDRESS + base + pos, &mut buf[..n])
+                    .map_err(|_| "sync: SDRAM read failed")?;
+                copy = Self::crc32(copy, &buf[..n]);
+                pos += n as u32;
+            }
+            if copy != crc {
+                log::error!("sync: save copy at {:08x} differs, {:08x} / {:08x}", base, crc, copy);
+                return Err("sync: save copy failed".into());
+            }
+        }
+        Ok(crc)
+    }
+
+    /// GB-162: an empty save (0xFF, as without a save file) in both save areas, read back.
+    fn sync_fill_save(device: &mut Device, size: u32) -> Result<u32, String> {
+        let clock = Some(Hertz(5_000 * 1000 * 2).min(fpga::MAX_SPI_READ_CLOCK));
+        let mut buf = vec![0u8; 2048];
+        let mut expected = 0xFFFF_FFFFu32;
+        let mut pos = 0u32;
+        while pos < size {
+            let n = ((size - pos) as usize).min(buf.len());
+            buf[..n].fill(0xFF);
+            expected = Self::crc32(expected, &buf[..n]);
+            for base in SYNC_SAVE_BASE {
+                device.fpga.spi_write(clock, rom_spi_command(), ROM_ADDRESS + base + pos, &buf[..n])
+                    .map_err(|_| "sync: SDRAM write failed")?;
+            }
+            pos += n as u32;
+        }
+        for base in SYNC_SAVE_BASE {
+            let mut crc = 0xFFFF_FFFFu32;
+            let mut pos = 0u32;
+            while pos < size {
+                let n = ((size - pos) as usize).min(buf.len());
+                device.fpga.spi_read(clock, rom_spi_command(), ROM_ADDRESS + base + pos, &mut buf[..n])
+                    .map_err(|_| "sync: SDRAM read failed")?;
+                crc = Self::crc32(crc, &buf[..n]);
+                pos += n as u32;
+            }
+            if crc != expected {
+                log::error!("sync: empty save at {:08x} differs, {:08x} / {:08x}", base, expected, crc);
+                return Err("sync: empty save failed".into());
+            }
+        }
+        Ok(expected)
     }
 
     fn get_bios_path() -> &'static str {
@@ -457,6 +548,7 @@ impl CoreHandler for Gba {
             let mut rom_header = [0u8; ROM_HEADER_LENGTH];
             file.read(&mut rom_header).map_err(|_| "I/O")?;
             file.seek(std::io::SeekFrom::Start(0)).map_err(|_| "I/O")?;
+            self.rom_id = Self::crc32(Self::crc32(0xFFFF_FFFF, &rom_header), &self.rom_file_size.to_le_bytes());
             let rom_header = RomHeader::parse(rom_header);
             self.nes_series_rom = NesSeriesRom::for_rom(&rom_header.game_code, self.rom_file_size);
             self.rom_loaded = 0;
@@ -567,6 +659,16 @@ impl CoreHandler for Gba {
         }
     }
 
+    fn sync_blank_save(&mut self) -> Result<Option<u32>, String> {
+        let Some(config) = self.emu_cart_config.as_ref().filter(|_| self.sync) else {
+            return Ok(None);
+        };
+        let size = config.save_type.get_size() as u32;
+        let save_crc = Self::sync_fill_save(&mut Device::lock(), size)?;
+        log::info!("sync: playing without the save, empty save={:08x}", save_crc);
+        Ok(Some(save_crc))
+    }
+
     fn on_before_run(&mut self) -> Result<(), String> {
         let mut device = Device::lock();
         self.initialize(&mut device).map_err(|e| e.to_string())?;
@@ -581,6 +683,36 @@ impl CoreHandler for Gba {
             let _ = device
                 .fpga
                 .write_u32(REG_EMU_CART_ROM_SIZE, self.rom_file_size - 1);
+
+            // GB-156: two cores with frame-locked buttons, when the link page asks for it, the
+            // bitstream has the second core and the cartridge has nothing tied to real time.
+            let mut sync = None;
+            if crate::link::link_requested() {
+                let caps = device.fpga.read_u32(fpga::LINK_SYNC_CAPS).ok();
+                if caps != Some(fpga::GBA_SYNC_CAPS_VALUE) {
+                    crate::link::sync_unavailable("core without second core", "core has no 2nd core");
+                } else if emu_cart_config.has_rtc || emu_cart_config.has_gyro || emu_cart_config.has_accel {
+                    crate::link::sync_unavailable("cartridge clock or sensor not supported", "game has a clock");
+                } else if self.rom_file_size > SYNC_SAVE_BASE[0] {
+                    crate::link::sync_unavailable("ROM reaches the save area in SDRAM", "ROM too large");
+                } else {
+                    let save_size = emu_cart_config.save_type.get_size() as u32;
+                    let save_crc = Self::sync_copy_save(&mut device, save_size)?;
+                    // The cartridge type changes what the cores do: part of the identity.
+                    let rom_id = Self::crc32(self.rom_id, &emu_cart_config.as_config_u32().to_le_bytes());
+                    sync = Some((rom_id, save_crc));
+                }
+            }
+            self.sync = sync.is_some();
+            if let Some((rom_id, save_crc)) = sync {
+                // Enabled and held: the radio task starts the cores when the partner matches.
+                let _ = device.fpga.write_u32(fpga::LINK_SYNC_CONTROL, 1 | crate::link::SYNC_DELAY << 4);
+                log::info!("sync: armed gba rom={:08x} save={:08x}, waiting for the partner (the save is not written back)",
+                    rom_id, save_crc);
+                crate::link::set_sync(true, true, rom_id, save_crc);
+            } else {
+                crate::link::set_sync(false, true, 0, 0);
+            }
 
             // Update RTC state
             let rtc_state = match self.rtc_state {
@@ -613,6 +745,8 @@ impl CoreHandler for Gba {
             }
         } else {
             // Switch to physical cartridge.
+            self.sync = false;
+            crate::link::set_sync(false, true, 0, 0);
             let _ = device
                 .fpga
                 .write_u32(REG_EMU_CART_CONFIG, EmulatedCartridgeConfig::DISABLED);
@@ -632,6 +766,11 @@ impl CoreHandler for Gba {
 
     fn get_file_size(&mut self, id: u16) -> Option<u32> {
         assert!(id == FILE_SAVE);
+        if self.sync {
+            // GB-156 first test: both consoles must start from the same save next time.
+            log::info!("sync: save not written back");
+            return Some(0);
+        }
         let size = self
             .emu_cart_config
             .as_ref()
@@ -660,6 +799,7 @@ impl CoreHandler for Gba {
 
     fn on_focus_changed(&mut self, has_focus: bool) {
         let paused = !has_focus;
+        crate::link::set_core_paused(paused);
         let mut device = Device::lock();
 
         // Enable/disable IMU as needed

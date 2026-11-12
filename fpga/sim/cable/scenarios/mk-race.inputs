@@ -1,0 +1,54 @@
+# mk-race: Mario Kart Super Circuit, Multi-Pak VS prin cablu
+# cadru nucleu masca
+610 0 8
+610 1 8
+618 0 0
+618 1 0
+690 0 128
+690 1 128
+698 0 0
+698 1 0
+730 0 8
+730 1 8
+738 0 0
+738 1 0
+810 0 8
+810 1 8
+818 0 0
+818 1 0
+970 0 8
+970 1 8
+978 0 0
+978 1 0
+1130 0 1
+1138 0 0
+1210 0 16
+1218 0 0
+1230 0 1
+1238 0 0
+1380 0 1
+1388 0 0
+# Character: each player moves to a different one, then confirms.
+1540 0 32
+1548 0 0
+1570 0 1
+1578 0 0
+1600 1 16
+1608 1 0
+1630 1 1
+1638 1 0
+# P1 confirms "OK?", then picks the cup and track (A each time).
+1810 0 1
+1818 0 0
+1900 0 1
+1908 0 0
+1990 0 1
+1998 0 0
+# P1 picks Peach Circuit and confirms.
+2050 0 1
+2058 0 0
+2130 0 1
+2138 0 0
+# Race: both hold A (accelerate).
+2400 0 1
+2400 1 1

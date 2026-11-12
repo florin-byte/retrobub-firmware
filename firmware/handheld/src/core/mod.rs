@@ -154,6 +154,12 @@ pub trait CoreHandler {
     /// Called when a core setting value is updated
     fn on_setting_changed(&mut self, id: u16, value: u32);
 
+    /// GB-162, Dual Core Link waiting room: replace the save in both cores with an empty one
+    /// (as when there is no save file) and return its id. None: no link game is armed.
+    fn sync_blank_save(&mut self) -> Result<Option<u32>, String> {
+        Ok(None)
+    }
+
     /// A transfer of an on-demand file requested by the last setting change, if any.
     fn take_file_request(&mut self) -> Option<FileRequest> {
         None
@@ -213,6 +219,8 @@ impl CoreManager {
 
     /// Find and list all cores (UI)
     pub fn list_cores(&mut self) {
+        // The Cores screen requests its list on entry; keep instrumentation out of UI code.
+        crate::link::log_memory("cores-enter");
         if self.listed_cores {
             // Already sent the list to the UI, ignore duplicate request.
             return;
@@ -224,6 +232,8 @@ impl CoreManager {
 
     /// Start the process of running a specific core (by ID).
     pub fn run_core(&mut self, id: &str, run_cartridge: bool) {
+        // A link game is asked for anew with every game chosen (GB-162).
+        crate::link::request_link_game(false);
         log::info!("Run core={id} cart={run_cartridge}");
         assert!(self.core_info.is_none());
         assert!(self.stage == Stage::Idle);
@@ -320,7 +330,25 @@ impl CoreManager {
         self.reset_state();
     }
 
-    pub fn exit_core(&mut self) {
+    /// `released` is told once the game is saved and the radio is stopped (GB-163: the screen
+    /// that follows needs that memory).
+    /// The players chose to play a Dual Core Link game without their (different) saves. Only
+    /// while the waiting room refuses the partner's save: the cores have not started.
+    pub fn sync_blank_save(&mut self) {
+        use crate::link::{SessionPhase, SessionWhy};
+        let session = crate::link::session();
+        if session.phase != SessionPhase::Refused || session.why != SessionWhy::Save {
+            return;
+        }
+        let Some(core_handler) = self.core_handler.get_mut() else { return };
+        match core_handler.sync_blank_save() {
+            Ok(Some(save_crc)) => crate::link::set_sync_save(save_crc),
+            Ok(None) => {}
+            Err(e) => log::error!("sync: empty save not set: {}", e),
+        }
+    }
+
+    pub fn exit_core(&mut self, released: Option<std::sync::mpsc::Sender<()>>) {
         if self.stage == Stage::Running {
             let _ = self.run_core_command(&[command::CORE_HALT], &mut [], NOTIFY_TIMEOUT);
 
@@ -334,6 +362,10 @@ impl CoreManager {
         }
 
         self.reset_state();
+        if let Some(released) = released {
+            // The receiver may have given up waiting.
+            let _ = released.send(());
+        }
 
         // Power off the DAC
         Device::lock()
@@ -353,8 +385,42 @@ impl CoreManager {
         }
     }
 
+    /// Sends the Cheats page to the UI.
+    pub fn ui_load_cheats(&self) {
+        if let Some(cheats) = self.cheats.as_ref() {
+            crate::ui::send(crate::ui::Message::CheatsPage(cheats.page()));
+        }
+    }
+
+    /// A cell of the Cheats page was pressed: the page again, and a notification when it was refused.
+    pub fn cheat_activate(&mut self, id: u16) {
+        let Some(cheats) = self.cheats.as_mut() else { return };
+        let result = cheats.activate(id);
+        crate::ui::send(crate::ui::Message::CheatsPage(cheats.page()));
+        if let Err(text) = result {
+            crate::ui::send(crate::ui::Message::Notification(crate::ui::Notification::new_short(text)));
+        }
+    }
+
+    pub fn cheats_all_off(&mut self) {
+        let Some(cheats) = self.cheats.as_mut() else { return };
+        cheats.all_off();
+        crate::ui::send(crate::ui::Message::CheatsPage(cheats.page()));
+    }
+
+    /// The game is darkened under the Cheats page (framework v2 video filter, bit 0).
+    pub fn cheats_page_open(&mut self, open: bool) {
+        if self.stage == Stage::Running {
+            let _ = Device::lock().fpga.write_u32(fpga::REG_CTRL_VIDEO_FILTER, open as u32);
+        }
+    }
+
     fn reset_state(&mut self) {
-        self.cheats = None;
+        crate::link::stop();
+        crate::link::set_link_running(false, false);
+        if self.cheats.take().is_some() {
+            crate::ui::send(crate::ui::Message::CheatsAvailable(false));
+        }
         self.core_info = None;
         self.core_handler = CoreHandlerImpl::None;
         self.core_settings = None;
@@ -508,7 +574,7 @@ impl CoreManager {
 
     fn finish_loading(&mut self) {
         if let Err(e) = self.finish_loading_inner() {
-            self.exit_core();
+            self.exit_core(None);
             ui::send(ui::Message::CoreLoadError(e.to_string()));
         }
     }
@@ -518,7 +584,7 @@ impl CoreManager {
 
         // Wait for the core to be ready for setup.
         self.poll_core_status(command::STATUS_SETUP, SETUP_TIMEOUT)?;
-        ui::send(ui::Message::EnterGame);
+        ui::send(ui::Message::EnterGame { wireless_link: matches!(&self.core_handler, CoreHandlerImpl::Gameboy(_) | CoreHandlerImpl::Gba(_)) });
 
         let cart_power = match self.core_info.as_ref().unwrap().uses_cartridge {
             CoreCartridgeMode::No => false,
@@ -563,6 +629,7 @@ impl CoreManager {
         if let Some(cheats) = self.cheats.as_ref() {
             cheats.send();
         }
+        crate::ui::send(crate::ui::Message::CheatsAvailable(self.cheats.is_some()));
 
         if let Some(core_handler) = self.core_handler.get_mut() {
             core_handler
@@ -578,20 +645,40 @@ impl CoreManager {
         log::info!("Core ready to run");
 
         // Clear loading bar
-        ui::send(ui::Message::EnterGame);
+        ui::send(ui::Message::EnterGame { wireless_link: matches!(&self.core_handler, CoreHandlerImpl::Gameboy(_) | CoreHandlerImpl::Gba(_)) });
         self.stage = Stage::Running;
 
         // Start core.
         let _ = Device::lock().fpga.write_u32(fpga::REG_CTRL_VIBRATE, 1);
         let _ = self.run_core_command(&[command::CORE_RUN], &mut [], NOTIFY_TIMEOUT);
+        crate::link::set_link_running(
+            matches!(&self.core_handler, CoreHandlerImpl::Gameboy(_) | CoreHandlerImpl::Gba(_)),
+            matches!(&self.core_handler, CoreHandlerImpl::Gba(_)));
         self.focus_changed(true);
+        if matches!(&self.core_handler, CoreHandlerImpl::Gameboy(_)) {
+            crate::link::log_memory("game-before-radio");
+        }
         Ok(())
     }
 
     fn load_bitstream(&mut self) {
         assert!(self.stage == Stage::LoadBitstream);
 
-        bitstream::program_fpga(&self.core_info.as_ref().unwrap().bitstream);
+        // GB-162: a game chosen with "Dual Core Link" runs on the two-core bitstream from the card.
+        let dual = match &self.core_handler {
+            CoreHandlerImpl::Gameboy(_) => Some(false),
+            CoreHandlerImpl::Gba(_) => Some(true),
+            _ => None,
+        }
+        .filter(|_| crate::link::link_requested())
+        .and_then(crate::link::dual_core_bitstream);
+        match &dual {
+            Some(path) => {
+                log::info!("sync: two-core bitstream {}", path.display());
+                bitstream::program_fpga(path);
+            }
+            None => bitstream::program_fpga(&self.core_info.as_ref().unwrap().bitstream),
+        }
         if let Some(core_handler) = self.core_handler.get_mut() {
             core_handler.on_after_program();
         }
@@ -644,6 +731,9 @@ impl CoreManager {
             };
 
             log::info!("Load file {} from {}", info.label, path.display());
+            if info.id == 0 {
+                crate::link::set_game_title(&path);
+            }
 
             let file = File::open(&path);
             self.selected_files[i] = Some(path);
