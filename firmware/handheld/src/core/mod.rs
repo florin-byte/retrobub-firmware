@@ -355,6 +355,9 @@ impl CoreManager {
 
     fn finish_loading_inner(&mut self) -> Result<(), CoreError> {
         self.load_bitstream();
+        // The core's overlay has 2 bits per pixel: the in-game menu gets its outline from the firmware
+        // (GB-181); the Redraw below repaints the whole screen with it.
+        ui::outline::set_enabled(true);
 
         // Wait for the core to be ready for setup.
         self.poll_core_status(command::STATUS_SETUP, SETUP_TIMEOUT)?;

@@ -1,4 +1,5 @@
 pub mod buttons;
+pub mod outline;
 mod screenshot;
 pub mod slint;
 mod state;
@@ -91,6 +92,24 @@ static SENDER: OnceLock<mpsc::Sender<Message>> = OnceLock::new();
 struct FpgaLineRenderer<'a, 'b, 'c> {
     device: &'a mut Device<'b>,
     line_buffer: &'c mut [Argb1555],
+    /// In-game overlay (GB-181): lines are kept and sent with the outline after the frame.
+    outline: Option<&'c mut outline::Outline>,
+}
+
+impl FpgaLineRenderer<'_, '_, '_> {
+    /// Send the area of the frame with the outline (nothing to do without it).
+    fn finish(&mut self) {
+        let Some(outline) = self.outline.as_deref_mut() else { return };
+        let Some((x0, x1, y0, y1)) = outline.take_area() else { return };
+        for y in y0..y1 {
+            let buffer = &mut self.line_buffer[..x1 - x0];
+            for (i, p) in buffer.iter_mut().enumerate() {
+                *p = outline.outlined(x0 + i, y);
+            }
+            let slice = unsafe { std::slice::from_raw_parts(buffer.as_ptr() as *const u8, buffer.len() * 2) };
+            let _ = self.device.fpga.write_overlay(((DISPLAY_WIDTH * y + x0) * 2) as u32, slice);
+        }
+    }
 }
 
 impl<'a, 'b, 'c> LineBufferProvider for &mut FpgaLineRenderer<'a, 'b, 'c> {
@@ -103,8 +122,14 @@ impl<'a, 'b, 'c> LineBufferProvider for &mut FpgaLineRenderer<'a, 'b, 'c> {
         render_fn: impl FnOnce(&mut [Self::TargetPixel]),
     ) {
         let start = ((DISPLAY_WIDTH * line) + range.start) * 2;
+        let range_start = range.start;
         let buffer = &mut self.line_buffer[range];
         render_fn(buffer);
+
+        if let Some(outline) = self.outline.as_deref_mut() {
+            outline.store(line, range_start, buffer);
+            return;
+        }
 
         let slice = {
             let len = buffer.len() * 2;
@@ -118,6 +143,8 @@ impl<'a, 'b, 'c> LineBufferProvider for &mut FpgaLineRenderer<'a, 'b, 'c> {
 pub struct UI {
     framebuffer: Vec<Argb1555>,
     lcd_line_buffer: Vec<u8>,
+    /// Classes of the in-game overlay, for its outline (GB-181).
+    outline: outline::Outline,
     window: Rc<MinimalSoftwareWindow>,
     message_queue: Receiver<Message>,
     root: slint::MainWindow,
@@ -183,6 +210,7 @@ impl UI {
         UI {
             framebuffer,
             lcd_line_buffer,
+            outline: outline::Outline::new(DISPLAY_WIDTH, DISPLAY_HEIGHT),
             window,
             message_queue: receiver,
             state: UiState::new(&root, device),
@@ -229,8 +257,10 @@ impl UI {
                     let mut line_renderer = FpgaLineRenderer {
                         device: &mut device,
                         line_buffer: &mut self.framebuffer,
+                        outline: if outline::enabled() { Some(&mut self.outline) } else { None },
                     };
                     renderer.render_by_line(&mut line_renderer);
+                    line_renderer.finish();
                 };
                 #[cfg(feature = "link-diag")]
                 if probe_cheats {

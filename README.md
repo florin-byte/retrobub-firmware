@@ -6,7 +6,20 @@ Color and Game Boy Advance) with my fixes, so you can build all of it. It is not
 
 The ready-to-flash files are in the [releases](../../releases).
 
-## Update of 19 Nov 2026
+## Update v0.5.1 (19 Nov 2026)
+
+- Fix: opening the in-game Settings could crash the console (out of memory), for example over every Game Gear game.
+  The black outline of the in-game menu was drawn by copies of every text, icon and frame, which more than doubled
+  the memory of the Settings panel. Now the firmware adds the outline itself after drawing: every transparent pixel
+  next to a light one becomes black. The menu looks the same (frames are no longer cut by a neighbour's outline),
+  and the Settings panel needs about a third less memory and less than half the peak while drawing.
+- The FPGA scaler shared with the SD card cores handles Integer scaling of the game window (Game Gear v0.5.1).
+  The built-in cores do not use it, so they are the same as in v0.5.0.
+
+I tested the rev2 build on my two consoles (the in-game menu and Settings no longer crash). The rev4
+files are built from the same source, but nobody has run them yet.
+
+## Update of 19 Nov 2026 (v0.5.0)
 
 This one moves everything to Eli's 1.1.0-beta4 and fixes what I found while testing it.
 

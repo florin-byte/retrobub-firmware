@@ -84,5 +84,7 @@ fn heatshrink_decompress_stream(file: File) -> impl Read {
 
 pub fn program_boot() {
     program_fpga(&crate::util::get_system_file_path("boot.bit.hs"));
+    // Full-color overlay: no computed outline (GB-181).
+    ui::outline::set_enabled(false);
     ui::send(ui::Message::Redraw);
 }
