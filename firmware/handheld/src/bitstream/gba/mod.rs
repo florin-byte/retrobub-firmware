@@ -59,7 +59,6 @@ const SYNC_SAVE_BASE: [u32; 2] = [0x01FC_0000, 0x01FE_0000];
 const FILE_BIOS: u16 = 2;
 const FILE_CONFIG_OVERRIDE: u16 = 3;
 
-const SETTING_RESET: u16 = 0;
 const SETTING_COLOR_CORRECTIONS: u16 = 1;
 const SETTING_GAME_BOY_PLAYER: u16 = 2;
 
@@ -478,15 +477,8 @@ impl Gba {
                     default: 1,
                     inner: CoreSettingType::Checkbox { value: 1 },
                 },
-                CoreSetting {
-                    id: SETTING_RESET,
-                    label: "Reset Core".into(),
-                    address: 0x0000_2000,
-                    mask: 0,
-                    default: 0,
-                    inner: CoreSettingType::Action { value: 1, file: None, load: false },
-                },
             ]
+
             .into_iter()
             .collect(),
             bitstream: crate::util::get_system_file_path("gba.bit.hs"),
@@ -499,18 +491,24 @@ impl Bitstream for Gba {
         let mut device = Device::lock();
 
         // Read IMU
-        let has_gyro = self.emu_cart_config.as_ref().map_or(false, |h| h.has_gyro);
+        let has_gyro = self.emu_cart_config.as_ref().is_some_and(|h| h.has_gyro);
         if has_gyro {
-            let gyro_sample = device.imu.read_gyro().unwrap();
+            let Ok(gyro_sample) = device.imu.read_gyro() else {
+                log::warn!("Error sampling gyro");
+                return;
+            };
             let gyro_z = ((0x700 as f32) - gyro_sample.z) as u16;
             device
                 .fpga
                 .write_u32(REG_IMU_GYRO_Z, gyro_z as u32)
                 .unwrap();
         }
-        let has_accel = self.emu_cart_config.as_ref().map_or(false, |h| h.has_accel);
+        let has_accel = self.emu_cart_config.as_ref().is_some_and(|h| h.has_accel);
         if has_accel {
-            let accel_sample = device.imu.read_accel().unwrap();
+            let Ok(accel_sample) = device.imu.read_accel() else {
+                log::warn!("Error sampling accel");
+                return;
+            };
             let accel_x = ((0x3A0 as f32) + ((0x1D0 as f32) * -accel_sample.x)) as u16;
             let accel_y = ((0x3A0 as f32) + ((0x1D0 as f32) * -accel_sample.y)) as u16;
             device
@@ -618,7 +616,7 @@ impl CoreHandler for Gba {
 
         let autodetect = self
             .emu_cart_config
-            .map_or(true, |x| x.save_type.autodetect());
+            .is_none_or(|x| x.save_type.autodetect());
         if autodetect {
             self.save_type_detector.process(data);
         }
@@ -647,7 +645,7 @@ impl CoreHandler for Gba {
 
         let autodetect = self
             .emu_cart_config
-            .map_or(true, |x| x.save_type.autodetect());
+            .is_none_or(|x| x.save_type.autodetect());
         if autodetect {
             log::info!("Detected save type: {:?}", self.save_type_detector.get());
             self.emu_cart_config.get_or_insert_default().save_type = self.save_type_detector.get();
@@ -753,12 +751,12 @@ impl CoreHandler for Gba {
         }
 
         // Warn if using built-in GBA bios
-        if kvs::keys::GBA_BIOS_WARNING.get().unwrap_or(true) {
-            if !Path::new("/sdcard/system/gba.bios.bin").is_file() {
-                ui::send(ui::Message::Notification(ui::Notification::new_long(
-                    "No GBA BIOS provided:\nsome games may have bugs\n(see User Guide)".into(),
-                )));
-            }
+        if kvs::keys::GBA_BIOS_WARNING.get().unwrap_or(true)
+            && !Path::new("/sdcard/system/gba.bios.bin").is_file()
+        {
+            ui::send(ui::Message::Notification(ui::Notification::new_long(
+                "No GBA BIOS provided:\nsome games may have bugs\n(see User Guide)".into(),
+            )));
         }
 
         Ok(())
@@ -782,7 +780,7 @@ impl CoreHandler for Gba {
         assert!(id == FILE_SAVE);
 
         // Save RTC
-        if self.emu_cart_config.as_ref().map_or(false, |e| e.has_rtc) {
+        if self.emu_cart_config.as_ref().is_some_and(|e| e.has_rtc) {
             let mut device = Device::lock();
             let rtc_lo = device.fpga.read_u32(REG_RTC_LO).unwrap();
             let rtc_hi = device.fpga.read_u32(REG_RTC_HI).unwrap();
@@ -803,14 +801,14 @@ impl CoreHandler for Gba {
         let mut device = Device::lock();
 
         // Enable/disable IMU as needed
-        if self.emu_cart_config.as_ref().map_or(false, |h| h.has_gyro) {
+        if self.emu_cart_config.as_ref().is_some_and(|h| h.has_gyro) {
             if paused {
                 device.imu.disable_gyro().unwrap();
             } else {
                 device.imu.enable_gyro().unwrap();
             }
         }
-        if self.emu_cart_config.as_ref().map_or(false, |h| h.has_accel) {
+        if self.emu_cart_config.as_ref().is_some_and(|h| h.has_accel) {
             if paused {
                 device.imu.disable_accel().unwrap();
             } else {

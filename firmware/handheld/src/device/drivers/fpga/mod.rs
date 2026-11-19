@@ -15,16 +15,14 @@ use esp_idf_svc::hal::{
 };
 use thiserror::Error;
 
-use crate::device::DisplayMode;
-
 pub const REG_INFO_FRAMEWORK_VER: u32 = 0xF100_0000;
 pub const REG_INFO_SYSCLK_HZ: u32 = 0xF100_0004;
 pub const REG_INFO_VIDEO_DIM: u32 = 0xF100_0100;
 pub const REG_INFO_VIDEO_DEPTH: u32 = 0xF100_0104;
+pub const REG_INFO_INPUT_CAPS: u32 = 0xF100_0108;
 
 pub const REG_CTRL_IRQ_ENABLE: u32 = 0xF100_1000;
 pub const REG_CTRL_IRQ_PENDING: u32 = 0xF100_1004;
-pub const REG_CTRL_BUTTON_FORCE: u32 = 0xF100_1008;
 pub const REG_CTRL_DOCK: u32 = 0xF100_100C;
 pub const REG_CTRL_FOCUS: u32 = 0xF100_1010;
 pub const REG_CTRL_VIBRATE: u32 = 0xF100_1014;
@@ -49,6 +47,8 @@ pub const fn button_remap_ab_enabled(value: u32) -> bool {
 
 pub const REG_CTRL_CMD_HOST: u32 = 0xF100_1100;
 pub const REG_CTRL_CMD_CORE: u32 = 0xF100_1104;
+
+pub const REG_CTRL_INPUT_SLOT_BASE: u32 = 0xF100_1400;
 
 pub const REG_STATUS_BUTTON: u32 = 0xF100_2000;
 pub const REG_STATUS_CART_SWITCH: u32 = 0xF100_2004;
@@ -227,6 +227,7 @@ impl<'a> SpiDataDriver<'a> {
 mod xilinx;
 
 #[derive(Debug, Error)]
+#[allow(clippy::enum_variant_names)]
 pub enum Error {
     #[error("gpio error")]
     PinError,
@@ -358,6 +359,7 @@ where
     }
 
     /// Program the FPGA with a new bitstream.
+    #[allow(clippy::unnecessary_unwrap)]
     pub fn program(
         &mut self,
         bitstream: &mut dyn Read,
@@ -495,7 +497,7 @@ where
             &mut [
                 Operation::Write(&[command]),
                 Operation::WriteWithWidth(&address, width),
-                Operation::WriteWithWidth(&data, width),
+                Operation::WriteWithWidth(data, width),
             ],
         )
     }
@@ -529,6 +531,18 @@ where
         let command = SpiCommand::new(FpgaSpiWordSize::Bits32);
         let data = data.to_le_bytes();
         self.spi_write(None, command, address, &data)
+    }
+
+    /// Write an input slot (buttons, sticks, triggers).
+    pub fn write_input_slot(&mut self, slot: usize, words: [u32; 3]) -> Result<(), Error> {
+        let address = REG_CTRL_INPUT_SLOT_BASE + (slot as u32) * 0x10;
+        let command = SpiCommand::new(FpgaSpiWordSize::Bits32);
+        self.spi_write(
+            None,
+            command,
+            address,
+            words.map(u32::to_le_bytes).as_flattened(),
+        )
     }
 
     pub fn read_u32(&mut self, address: u32) -> Result<u32, Error> {
@@ -667,8 +681,9 @@ where
         Ok((self.read_u32(REG_STATUS_CART_SWITCH)? & 1) != 0)
     }
 
-    pub fn set_display_mode(&mut self, new_mode: DisplayMode) -> Result<(), Error> {
-        self.write_u32(REG_CTRL_DOCK, (new_mode == DisplayMode::External) as u32)
+    pub fn set_dock_state(&mut self, docked: bool, use_builtin_screen: bool) -> Result<(), Error> {
+        let val = (docked as u32) | ((use_builtin_screen as u32) << 1);
+        self.write_u32(REG_CTRL_DOCK, val)
     }
 }
 

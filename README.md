@@ -1,10 +1,40 @@
 # Retro Bub firmware for the Game Bub
 
-This is my firmware for the [Game Bub](https://github.com/elipsitz/gamebub). It includes Eli's 1.1.0-beta3 fixes with
+This is my firmware for the [Game Bub](https://github.com/elipsitz/gamebub). It includes Eli's 1.1.0-beta4 changes with
 the things I added and fixed. The repo also has the FPGA framework and the built-in cores (boot, Game Boy / Game Boy
 Color and Game Boy Advance) with my fixes, so you can build all of it. It is not the official Game Bub firmware.
 
 The ready-to-flash files are in the [releases](../../releases).
+
+## Update of 19 Nov 2026
+
+This one moves everything to Eli's 1.1.0-beta4 and fixes what I found while testing it.
+
+From Eli's beta4:
+- The new in-game menu with a sidebar, and core load errors shown on the screen instead of a silent failure.
+- A new input protocol for gamepads through the dock, and a setting to keep the built-in screen when docked.
+- The cores on the SD card are checked before loading: `core.json`, `files.json`, `settings.json` and the bitstream.
+  File names in a core's JSON must be inside the core folder, and settings at framework addresses are refused.
+- Up to 16 files per core, natural sorting in the file lists, faster seeking in big files.
+- FPGA: no more tearing from conflicting framebuffer writes, HDMI frame switching fix, 64 MB SDRAM on rev4,
+  GBA 2 MHz serial fix.
+
+Mine:
+- The in-game menu is drawn over the darkened game, with a black outline under the text so it stays readable.
+- In the in-game Settings the label no longer runs into its value.
+- The lists keep a scrolling text only on the selected row. Before, every row had one, and after a GBA game the
+  console could run out of memory and crash in a folder list.
+- The Run Core screen fits long names.
+- GBA Config Override finds `<game>.json` again.
+- Swap A/B is added by the firmware to cores that ask for it (`hardware.button_remap`), since beta4 refuses the entry
+  in their `settings.json`.
+
+**The cores on the SD card must be updated too.** With beta4, older JSON files can fail to load ("invalid filename"
+or a setting at a framework address). Use the new Game Gear (v0.5.0) and Lynx (v0.3.0) releases. The Lynx boot ROM
+now goes in `cores/Retro-Bub.Lynx/lynxboot.img`. The Dual Core Link files in `system/` must also be the new ones from
+this release.
+
+I tested the rev2 build on my two consoles. The rev4 files are built from the same source, but nobody has run them yet.
 
 ## Update prepared on 12 Nov 2026
 
@@ -113,7 +143,7 @@ with `"file_slots": <file id>` and two actions with `"file": <file id>` (one of 
 README explains it step by step.
 
 Swap A/B for a rebuilt framework-v2 core: use `"hardware": { "button_remap": true }` in `core.json`.
-The firmware adds one Off/On list before Reset if JSON does not already contain it. Off writes
+The firmware adds one Off/On list before Reset (beta4 refuses the entry in `settings.json`, the address is a framework one). Off writes
 `0x0B0A0908`, On writes `0x0A0B0908` at `0xF1001208`, setting ID `0x7FF1`. Old checkbox IDs/values are not reused.
 
 ## Install

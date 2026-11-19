@@ -56,7 +56,6 @@ const STATE_SLOTS: u32 = 4;
 /// GB-145: cartridge RAM of the hidden core, after the largest save (128 KiB) in the SRAM.
 const SYNC_RAM_BASE: u32 = 0x2_0000;
 
-const SETTING_RESET: u16 = 0;
 const SETTING_GB_MODE: u16 = 1;
 const SETTING_GBC_COLOR_CORRECTIONS: u16 = 2;
 const SETTING_GB_COLOR_PALETTE: u16 = 3;
@@ -219,7 +218,7 @@ impl Gameboy {
             button_remap: true,
             files: [
                 CoreFile {
-                    id: SETTING_RESET,
+                    id: FILE_ROM,
                     label: "ROM".try_into().unwrap(),
                     extensions: ["gb".try_into().unwrap(), "gbc".try_into().unwrap()]
                         .into_iter()
@@ -241,7 +240,7 @@ impl Gameboy {
                     transfer_word_size: fpga::FpgaSpiWordSize::Bits32,
                 },
                 CoreFile {
-                    id: 1,
+                    id: FILE_SAVE,
                     label: "Save".try_into().unwrap(),
                     extensions: ["sav".try_into().unwrap()].into_iter().collect(),
                     filename: None,
@@ -260,7 +259,7 @@ impl Gameboy {
                     transfer_word_size: fpga::FpgaSpiWordSize::Bits16,
                 },
                 CoreFile {
-                    id: 2,
+                    id: FILE_BIOS_CGB,
                     label: "BIOS CGB".try_into().unwrap(),
                     extensions: ["bin".try_into().unwrap()].into_iter().collect(),
                     filename: None, // TODO
@@ -279,7 +278,7 @@ impl Gameboy {
                     transfer_word_size: fpga::FpgaSpiWordSize::Bits8,
                 },
                 CoreFile {
-                    id: 3,
+                    id: FILE_BIOS_DMG,
                     label: "BIOS DMG".try_into().unwrap(),
                     extensions: ["bin".try_into().unwrap()].into_iter().collect(),
                     filename: None, // TODO
@@ -397,14 +396,6 @@ impl Gameboy {
                         file_slots: None,
                     },
                 },
-                CoreSetting {
-                    id: 0,
-                    label: "Reset Core".into(),
-                    address: REG_RESET_ONCE,
-                    mask: 0,
-                    default: 0,
-                    inner: CoreSettingType::Action { value: 1, file: None, load: false },
-                },
             ]
             .into_iter()
             .collect(),
@@ -416,7 +407,10 @@ impl Gameboy {
 impl Bitstream for Gameboy {
     fn on_vblank_irq(&mut self) {
         let mut device = Device::lock();
-        let sample = device.imu.read_accel().unwrap();
+        let Ok(sample) = device.imu.read_accel() else {
+            log::warn!("Error sampling accel");
+            return;
+        };
         // Invert X and Y
         let accel_x = ((0x81D0 as f32) + ((0x70 as f32) * -sample.x)) as u16;
         let accel_y = ((0x81D0 as f32) + ((0x70 as f32) * -sample.y)) as u16;
@@ -599,7 +593,7 @@ impl CoreHandler for Gameboy {
         assert!(id == FILE_SAVE);
 
         // Save RTC
-        if self.rom_header.as_ref().map_or(false, |h| h.has_rtc) {
+        if self.rom_header.as_ref().is_some_and(|h| h.has_rtc) {
             use rtc::RtcState;
             let mut device = Device::lock();
             let rtc_state = RtcState::from_fpga(device.fpga.read_u32(REG_RTC_STATE).unwrap());
@@ -619,7 +613,7 @@ impl CoreHandler for Gameboy {
         let mut device = Device::lock();
 
         // Enable/disable IMU as needed
-        if self.rom_header.as_ref().map_or(false, |h| h.has_sensor) {
+        if self.rom_header.as_ref().is_some_and(|h| h.has_sensor) {
             if paused {
                 device.imu.disable_accel().unwrap();
             } else {

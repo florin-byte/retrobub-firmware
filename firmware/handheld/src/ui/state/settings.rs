@@ -13,6 +13,7 @@ use crate::util::localtime;
 
 use super::UiState;
 
+#[allow(clippy::module_inception)]
 mod settings {
     use crate::kvs::{keys, KvsKey};
     use crate::ui::state::ScreenId;
@@ -120,6 +121,24 @@ mod settings {
                 key: &keys::STARTUP_ACTION,
                 choices: &["Main Menu", "Run Cartridge"],
             },
+            Entry::Checkbox {
+                name: "Require long press to power on (*)",
+                key: &keys::DEEP_SLEEP,
+            },
+        ],
+    };
+
+    pub static PAGE_DOCK: Page = Page {
+        name: "Dock",
+        entries: &[
+            Entry::Checkbox {
+                name: "Swap A/B and X/Y",
+                key: &keys::DOCK_SWAP_ABXY,
+            },
+            Entry::Checkbox {
+                name: "Use built-in screen when docked",
+                key: &keys::DOCK_USE_BUILTIN_SCREEN,
+            },
         ],
     };
 
@@ -130,14 +149,6 @@ mod settings {
     pub static PAGE_WIRELESS: Page = Page {
         name: "Wireless link",
         entries: &[Entry::Info { text: console_name }, Entry::Partner],
-    };
-
-    pub static PAGE_DOCK: Page = Page {
-        name: "Dock",
-        entries: &[Entry::Checkbox {
-            name: "Swap A/B and X/Y",
-            key: &keys::DOCK_SWAP_ABXY,
-        }],
     };
 
     pub static PAGE_CORE_GB: Page = Page {
@@ -428,7 +439,7 @@ impl SettingsModel {
                 Device::lock().set_datetime(dt);
             }
             settings::Entry::Subpage { page, .. } => {
-                return SettingsAction::Subpage(*page);
+                return SettingsAction::Subpage(page);
             }
             settings::Entry::Screen { screen, .. } => {
                 return SettingsAction::Screen(*screen);
@@ -458,6 +469,7 @@ enum SettingsAction {
 
 /// Helper function used by the UI to be able to correctly modify individual datetime components.
 pub fn settings_datetime_add(source: SettingDatetime, delta: SettingDatetime) -> SettingDatetime {
+    #[allow(clippy::manual_clamp)]
     fn inner(
         source: &SettingDatetime,
         delta: SettingDatetime,

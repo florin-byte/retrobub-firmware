@@ -6,12 +6,72 @@ import { ButtonList } from "../components/button_list.slint";
 import { CoreSettingList } from "cores/core_settings.slint";
 import { CoreSettingType } from "cores/types.slint";
 import { CheatsPage } from "cheats.slint";
+import { OutlinedText, OutlinedFrame } from "../components/outline.slint";
+
+// The in-game menu is drawn over the game, which the FPGA darkens while the menu is open, like the
+// Cheats page: no background of its own, fixed light text and grey lines (not the theme colors,
+// whose dark text would not read over the darkened game).
+global OverlayColors {
+    out property <color> text: white;
+    out property <color> text-dim: #d8d8d8;
+}
+
+component SidebarMenu inherits VerticalLayout {
+    callback on-selected(item: int);
+
+    in property <[string]> items;
+    in-out property <int> focused-item: 0;
+
+    padding: 4px;
+    spacing: 2px;
+    forward-focus: i-focus-scope;
+
+    i-focus-scope := FocusScope {
+        key-pressed(event) => {
+            if (event.repeat) {
+                reject
+            } else if (event.text == "a") {
+                on-selected(focused-item);
+                accept
+            } else if (event.text == Key.UpArrow) {
+                focused-item = max(0, focused-item - 1);
+                accept
+            } else if (event.text == Key.DownArrow) {
+                focused-item = min(items.length - 1, focused-item + 1);
+                accept
+            } else {
+                reject
+            }
+        }
+    }
+
+    for item[index] in items: Rectangle {
+        min-width: i-text.preferred-width + 8px;
+        height: i-text.preferred-height + 4px;
+
+        if focused-item == index: OutlinedFrame {
+            line-color: OverlayColors.text;
+        }
+
+        i-text := OutlinedText {
+            text: item;
+            x: 4px;
+            y: (parent.height - self.height) / 2;
+            width: self.preferred-width;
+            height: self.preferred-height;
+            text-color: focused-item == index ? OverlayColors.text : OverlayColors.text-dim;
+        }
+    }
+}
+
 
 export component GameScreen inherits ScreenBase {
     private property <bool> menu-open: false;
     private property <bool> settings-open: false;
     private property <bool> cheats-open: false;
     private property <bool> partners-open: false;
+    /// The Cheats page closes on the press of B: the release that follows must not close the menu.
+    private property <bool> cheats-closed-by-b: false;
     forward-focus: i-focus-scope;
 
     // /** todo: dev remove */
@@ -27,6 +87,7 @@ export component GameScreen inherits ScreenBase {
         Backend.game-set-focused(!open);
         self.menu-open = open;
         if (menu-open) {
+            i-list.focused-item = 0;
             i-list.focus();
         } else {
             settings-open = false;
@@ -54,10 +115,10 @@ export component GameScreen inherits ScreenBase {
 
     i-focus-scope := FocusScope {
         key-released(event) => {
-            if (event.text == "Home" || event.text == "h") && !Global.home-consumed {
+            if (event.text == "Home" || event.text == "h") && !Global.home-consumed && !Backend.core-is-loading {
                 set-menu-open(!root.menu-open);
             }
-            if (event.text == "Power") {
+            if event.text == "Power" && !root.menu-open {
                 set-menu-open(true);
             }
             if event.text == "b" && !root.menu-open && Backend.link-room-open && Backend.link-room-can-exit {
@@ -66,34 +127,39 @@ export component GameScreen inherits ScreenBase {
             if event.text == "a" && !root.menu-open && Backend.link-room-open && Backend.link-room-can-accept {
                 Backend.link-room-accept();
             }
-            if event.text == "b" && Backend.link-page-open {
-                if partners-open {
-                    partners-open = false;
-                    i-link-list.focus();
-                } else {
-                    Backend.link-page-open = false;
+            if event.text == "b" && root.menu-open && !cheats-open {
+                if cheats-closed-by-b {
+                    cheats-closed-by-b = false;
+                } else if Backend.link-page-open {
+                    if partners-open {
+                        partners-open = false;
+                        i-link-list.focus();
+                    } else {
+                        Backend.link-page-open = false;
+                        i-list.focus();
+                    }
+                } else if settings-open {
+                    settings-open = false;
                     i-list.focus();
+                } else {
+                    set-menu-open(false);
                 }
-            }
-            if event.text == "b" && settings-open {
-                settings-open = false;
-                i-list.focus();
             }
             reject
         }
 
-        menu := Rectangle {
-            visible: menu-open && !cheats-open;
-            background: Theme.surface;
-            border-color: Theme.border;
-            border-width: 1px;
-            width: i-list.min-width + 20px;
-            height: i-list.min-height;
+        i-menu := Rectangle {
+            visible: menu-open && !cheats-open && !Global.power-menu-open;
+            x: 0;
+            width: i-list.min-width;
+            height: 100%;
 
-            i-list := ButtonList {
+            i-list := SidebarMenu {
+                alignment: start;
+                // Return, Settings, [Cheats], [Wireless link], Reset, Exit Core
                 items: Backend.cheats-available
-                    ? (Backend.game-wireless-link ? ["Return", "Settings", "Cheats", "Wireless link", "Exit Core"] : ["Return", "Settings", "Cheats", "Exit Core"])
-                    : (Backend.game-wireless-link ? ["Return", "Settings", "Wireless link", "Exit Core"] : ["Return", "Settings", "Exit Core"]);
+                    ? (Backend.game-wireless-link ? ["Return", "Settings >", "Cheats", "Wireless link", "Reset", "Exit Core"] : ["Return", "Settings >", "Cheats", "Reset", "Exit Core"])
+                    : (Backend.game-wireless-link ? ["Return", "Settings >", "Wireless link", "Reset", "Exit Core"] : ["Return", "Settings >", "Reset", "Exit Core"]);
                 on-selected(item) => {
                     if (item == 0) {
                         root.set-menu-open(false);
@@ -105,6 +171,9 @@ export component GameScreen inherits ScreenBase {
                     } else if (Backend.game-wireless-link && item == (Backend.cheats-available ? 3 : 2)) {
                         Backend.link-page-open = true;
                         i-link-list.focus();
+                    } else if (item == self.items.length - 2) {
+                        Backend.game-reset();
+                        set-menu-open(false);
                     } else {
                         Backend.game-exit();
                     }
@@ -112,17 +181,18 @@ export component GameScreen inherits ScreenBase {
             }
         }
 
-        settings := Rectangle {
-            visible: settings-open;
-            background: Theme.surface;
-            border-color: Theme.border;
-            border-width: 1px;
-            x: 32px;
+        if settings-open: Rectangle {
+            visible: !Global.power-menu-open;
+
+            OutlinedFrame {
+                line-color: OverlayColors.text;
+            }
+            x: i-menu.width + 8px;
             y: 32px;
-            width: root.width - 64px;
+            width: root.width - self.x - 8px;
             height: root.height - 64px;
 
-            if settings-open: CoreSettingList {
+            CoreSettingList {
                 x: 2px;
                 y: 2px;
                 width: parent.width - 4px;
@@ -142,6 +212,7 @@ export component GameScreen inherits ScreenBase {
                 self.focus();
             }
             close => {
+                root.cheats-closed-by-b = true;
                 root.set-cheats-open(false);
             }
         }

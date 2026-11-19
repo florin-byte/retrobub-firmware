@@ -16,7 +16,7 @@ use ::slint::{
     PhysicalSize, Timer, TimerMode,
 };
 
-use crate::device::{Device, DisplayMode};
+use crate::device::Device;
 use crate::input::{self, InputManager};
 pub use crate::ui::state::{CheatsPage, CheatsPageCell, CheatsPageRow, CoreSettingUiItem};
 use crate::worker;
@@ -38,7 +38,6 @@ cfg_if::cfg_if! {
 
 pub enum Message {
     /// The state of the buttons have changed.
-    /// TODO: combine this with InputState/Gamepad handling
     Button(ButtonMap),
     /// Battery status has changed.
     BatteryStatus { level: f32, is_charging: bool },
@@ -50,12 +49,6 @@ pub enum Message {
     FatalError(String),
     /// Internal input state changed
     InputState(input::InputState),
-    /// Gamepad connected
-    GamepadConnected(input::GamepadId),
-    /// Gamepad disconnected
-    GamepadDisconnected(input::GamepadId),
-    /// Gamepad input event
-    GamepadInput(input::GamepadId, input::InputState),
     /// Show a notification
     Notification(Notification),
     /// Docked
@@ -153,12 +146,7 @@ impl UI {
         ] {
             device.fpga.write_u32(reg, color).unwrap();
         }
-        let display_mode = if device.docked {
-            DisplayMode::External
-        } else {
-            DisplayMode::Internal
-        };
-        device.change_display_mode(display_mode).unwrap();
+        device.refresh_display_mode().unwrap();
         // Start the boot animation after a delay.
         Timer::single_shot(Duration::from_millis(500), || {
             let animation = 1 | (6 << 2); // 6: 0.66 seconds
@@ -192,7 +180,7 @@ impl UI {
 
         let root = slint::MainWindow::new().unwrap();
 
-        let ui = UI {
+        UI {
             framebuffer,
             lcd_line_buffer,
             window,
@@ -203,8 +191,8 @@ impl UI {
             idle_timer,
             #[cfg(feature = "link-diag")]
             cheats_render_probe: false,
-        };
-        ui
+        }
+
     }
 
     pub fn run(&mut self) -> ! {
@@ -322,9 +310,6 @@ impl UI {
                 self.root.invoke_set_screen(slint::ScreenId::Error);
             }
             Message::InputState(state) => InputManager::lock().update_state(state),
-            Message::GamepadConnected(id) => InputManager::lock().add_gamepad(id),
-            Message::GamepadDisconnected(id) => InputManager::lock().remove_gamepad(id),
-            Message::GamepadInput(id, state) => InputManager::lock().update_gamepad(id, state),
             Message::Notification(notification) => {
                 self.state
                     .borrow_mut()

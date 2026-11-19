@@ -81,6 +81,11 @@ pub static WL_SYNC_GB: KvsKey<bool> = KvsKey::new_with_default("wl-sync-gb", fal
 /// GB-162: a GB/GBC (GBA) game asks "Play / Dual Core Link" when it is chosen. Off by default.
 pub static WL_LINK_GB: KvsKey<bool> = KvsKey::new_with_default("wl-link-gb", false);
 pub static WL_LINK_GBA: KvsKey<bool> = KvsKey::new_with_default("wl-link-gba", false);
+/// Whether to keep built-in screen on when docked.
+pub static DOCK_USE_BUILTIN_SCREEN: KvsKey<bool> = KvsKey::new_with_default("dock-screen", false);
+
+/// Whether power-off is actually deep sleep.
+pub static DEEP_SLEEP: KvsKey<bool> = KvsKey::new_with_default("deep-sleep", false);
 
 pub fn flush_all() {
     WL_NAME.flush();
@@ -112,4 +117,6 @@ pub fn flush_all() {
     DST_RULE.flush();
     TIME_24H.flush();
     UI_THEME.flush();
+    DOCK_USE_BUILTIN_SCREEN.flush();
+    DEEP_SLEEP.flush();
 }

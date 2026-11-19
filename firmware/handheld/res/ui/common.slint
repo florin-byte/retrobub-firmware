@@ -1,6 +1,8 @@
 import "../fonts/ark-pixel-12px-proportional.ttf";
 import "../fonts/ark-pixel-12px-proportional-bold.ttf";
 import "../fonts/ark-pixel-10px-proportional.ttf";
+// GB-173: Ark Pixel 12px with every glyph grown by one pixel, for the outline of the in-game menu.
+import "../fonts/retro-bub-menu-outline-12px.ttf";
 import {
     SettingEntry,
     SettingValue,
@@ -56,6 +58,8 @@ export global Global {
     // Whether the UI is transparent. Start true for the boot animation.
     in-out property <bool> ui-transparent: true;
     in-out property <bool> ui-status-bar: true;
+    // Whether the Power menu is open.
+    in-out property <bool> power-menu-open: false;
 
     public function set-screen(screen: ScreenId) {
         current-screen = screen;
@@ -166,6 +170,7 @@ export global Backend {
     in property <[string]> link-partners;
     callback link-partners-load();
     callback link-partner-choose(int);
+    callback game-reset();
     callback game-exit();
     callback game-settings-load();
     callback game-settings-set(int, int);

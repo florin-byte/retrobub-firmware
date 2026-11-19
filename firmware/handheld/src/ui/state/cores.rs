@@ -126,6 +126,7 @@ impl UiState {
             let mut state = state_.borrow_mut();
             state.core_file_select_pending = None;
             state.root.unwrap().global::<Backend>().set_core_file_select_ask(false);
+            state.root.unwrap().invoke_set_title("Cores".into());
             worker::send(worker::Message::CoreFileCancelled);
         });
     }
@@ -221,11 +222,11 @@ impl UiState {
         let path = &self.core_file_select_directory;
         let mut directory = path
             .strip_prefix(BASE_DIR)
-            .unwrap_or(&path)
+            .unwrap_or(path)
             .to_string_lossy()
             .into_owned();
         if !directory.starts_with("/") {
-            directory.insert_str(0, "/");
+            directory.insert(0, '/');
         }
 
         let root = self.root.unwrap();
@@ -283,6 +284,7 @@ impl UiState {
     pub fn cores_set_error(&mut self, error: String) {
         let root = self.root.unwrap();
         let backend = root.global::<Backend>();
+        root.invoke_set_title("Cores".into());
         backend.set_core_error(error.into());
         backend.set_core_subscreen(CoreSubscreen::Error);
         root.invoke_set_screen(ScreenId::Cores);

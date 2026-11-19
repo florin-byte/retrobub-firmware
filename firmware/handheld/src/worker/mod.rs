@@ -6,9 +6,8 @@ use std::sync::{mpsc, OnceLock};
 use crate::core::CoreManager;
 use crate::device::drivers::fpga;
 use crate::device::Device;
-use crate::device::DisplayMode;
-use crate::fwinfo::FirmwareVersion;
-use crate::input::InputManager;
+
+use crate::input::{GamepadId, InputManager, InputState};
 use crate::{kvs, ui};
 
 #[derive(Debug)]
@@ -25,10 +24,16 @@ pub enum Message {
         serial: u32,
         #[allow(unused)]
         hardware: u32,
-        firmware: u32,
+        firmware: String,
     },
     /// The handheld has undocked
     DockEnd,
+    /// A gamepad connected
+    GamepadConnected { id: GamepadId, has_analog: bool },
+    /// A gamepad disconnected
+    GamepadDisconnected(GamepadId),
+    /// Gamepad input event
+    GamepadInput(GamepadId, InputState),
 
     /// Run a cartridge
     RunCartridge,
@@ -46,6 +51,8 @@ pub enum Message {
     ExitCore(Option<mpsc::Sender<()>>),
     /// Dual Core Link waiting room: play without the saves
     SyncBlankSave,
+    /// Reset the current core
+    ResetCore,
     /// A file was selected for the core (could be a directory).
     CoreFileSelected(PathBuf),
     /// Core file selection was cancelled.
@@ -117,6 +124,9 @@ fn dispatch(message: Message) {
                     bitstream.on_vblank_irq();
                 }
             }
+            if (irq_mask & fpga::Irq::CoreRequest.as_flag()) != 0 {
+                CoreManager::lock().handle_core_request();
+            }
         }
         Message::HeadphoneState(has_headphones) => {
             log::info!("Headphone detection: {}", has_headphones);
@@ -144,20 +154,25 @@ fn dispatch(message: Message) {
         } => {
             ui::send(ui::Message::DockBegin {
                 serial: format!("{serial:08X}"),
-                firmware: format!("{}", FirmwareVersion::from(firmware)),
+                firmware,
             });
 
             InputManager::lock().remove_all_gamepads();
-            let mut device = Device::lock();
-            device.docked = true;
-            device.change_display_mode(DisplayMode::External).unwrap();
+            Device::lock().set_docked(true).unwrap();
         }
         Message::DockEnd => {
             ui::send(ui::Message::DockEnd);
             InputManager::lock().remove_all_gamepads();
-            let mut device = Device::lock();
-            device.docked = false;
-            device.change_display_mode(DisplayMode::Internal).unwrap();
+            Device::lock().set_docked(false).unwrap();
+        }
+        Message::GamepadConnected { id, has_analog } => {
+            InputManager::lock().add_gamepad(id, has_analog);
+        }
+        Message::GamepadDisconnected(id) => {
+            InputManager::lock().remove_gamepad(id);
+        }
+        Message::GamepadInput(id, state) => {
+            InputManager::lock().update_gamepad(id, state);
         }
         Message::PowerRefresh => {
             crate::power::PowerManager::lock().refresh();
@@ -175,6 +190,7 @@ fn dispatch(message: Message) {
         Message::RunCore(id) => CoreManager::lock().run_core(&id, false),
         Message::ExitCore(released) => CoreManager::lock().exit_core(released),
         Message::SyncBlankSave => CoreManager::lock().sync_blank_save(),
+        Message::ResetCore => CoreManager::lock().reset_core(),
         Message::CoreFileSelected(file) => CoreManager::lock().handle_file_selected(file),
         Message::CoreFileCancelled => CoreManager::lock().cancel_file_select(),
         Message::CoreFocusChanged(focused) => CoreManager::lock().focus_changed(focused),
