@@ -28,6 +28,8 @@ Mine:
 - The in-game Settings keep their look over the game (outlined rows, the value changed in place with Left / Right);
   Eli's popup is used in the menus outside the game.
 - Saves are still written to a temporary file first and the previous one kept as `.bak`.
+- A core with a clock gets the console's date and time before every start (`"rtc": { "address": "0x.." }` in
+  `core.json`, the layout MiSTer cores take). The Saturn core uses it.
 
 The built-in cores (boot, Game Boy / Game Boy Color, Game Boy Advance) and the Dual Core Link files are the ones
 from v0.5.0, not rebuilt: only the firmware changed. The FPGA sources in this repo do have Eli's newer framework

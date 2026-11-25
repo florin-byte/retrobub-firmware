@@ -362,6 +362,7 @@ impl Gba {
         CoreInfo {
             cheats: None,
             diag_log: Vec::new(),
+            rtc: None,
             id: "Game-Bub.GBA".try_into().unwrap(),
             name: "Game Boy Advance".try_into().unwrap(),
             author: "Game Bub".try_into().unwrap(),

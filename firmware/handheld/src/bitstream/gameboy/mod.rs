@@ -209,6 +209,7 @@ impl Gameboy {
         CoreInfo {
             cheats: None,
             diag_log: Vec::new(),
+            rtc: None,
             id: "Game-Bub.GB".try_into().unwrap(),
             name: "Game Boy / Game Boy Color".try_into().unwrap(),
             author: "Game Bub".try_into().unwrap(),

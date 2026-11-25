@@ -7,6 +7,31 @@ mod disc;
 mod diag_log;
 
 #[cfg(test)]
+#[path = "../../../src/core/rtc.rs"]
+mod rtc;
+
+#[cfg(test)]
+mod rtc_tests {
+    use super::rtc::{pack, valid_address};
+
+    #[test]
+    fn packs_bcd_fields() {
+        // 25 Nov 2026, 19:47:03
+        assert_eq!(pack(2026, 11, 25, 19, 47, 3), [0x2519_4703, 0x0000_2611]);
+        assert_eq!(pack(2000, 1, 1, 0, 0, 0), [0x0100_0000, 0x0000_0001]);
+        assert_eq!(pack(2099, 12, 31, 23, 59, 59), [0x3123_5959, 0x0000_9912]);
+    }
+
+    #[test]
+    fn checks_the_address() {
+        assert!(valid_address(0x10));
+        assert!(!valid_address(0x12));
+        assert!(!valid_address(0xF000_0000));
+        assert!(!valid_address(0xEFFF_FFFC));
+    }
+}
+
+#[cfg(test)]
 mod diag_log_tests {
     use super::diag_log::validate_diag_log;
     use serde_json::json;

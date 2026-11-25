@@ -33,6 +33,7 @@ mod files_on_demand;
 mod handler;
 pub mod info;
 mod on_demand;
+mod rtc;
 pub mod settings;
 
 static CORE_MANAGER: LazyLock<Mutex<CoreManager>> =
@@ -326,7 +327,30 @@ impl CoreManager {
             return;
         }
         let _ = self.run_core_command(&[command::CORE_HALT], &mut [], NOTIFY_TIMEOUT);
+        self.send_rtc();
         let _ = self.run_core_command(&[command::CORE_RUN], &mut [], NOTIFY_TIMEOUT);
+    }
+
+    /// Give the core the console's date and time. Called while the core is halted, before every start: a core
+    /// takes the value when it leaves reset, and only if the third register has changed (GB-269).
+    fn send_rtc(&self) {
+        let Some(rtc) = self.core_info.as_ref().and_then(|core| core.rtc) else {
+            return;
+        };
+        let mut device = Device::lock();
+        let now = device.get_datetime();
+        let words = rtc::pack(
+            now.year() as u32,
+            u8::from(now.month()) as u32,
+            now.day() as u32,
+            now.hour() as u32,
+            now.minute() as u32,
+            now.second() as u32,
+        );
+        let toggle = device.fpga.read_u32(rtc.address + 8).unwrap_or(0) & 1;
+        let _ = device.fpga.write_u32(rtc.address, words[0]);
+        let _ = device.fpga.write_u32(rtc.address + 4, words[1]);
+        let _ = device.fpga.write_u32(rtc.address + 8, toggle ^ 1);
     }
 
     pub fn focus_changed(&mut self, has_focus: bool) {
@@ -446,6 +470,7 @@ impl CoreManager {
         // Start core.
         let _ = Device::lock().fpga.write_u32(fpga::REG_CTRL_VIBRATE, 1);
 
+        self.send_rtc();
         let _ = self.run_core_command(&[command::CORE_RUN], &mut [], NOTIFY_TIMEOUT);
         self.log_core_diag("start");
         crate::link::set_link_running(

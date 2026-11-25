@@ -60,6 +60,15 @@ pub struct CoreInfo {
     pub cheats: Option<CoreCheats>,
     /// Core memory words logged once when the core starts and exits.
     pub diag_log: Vec<CoreDiagLog>,
+    /// Where the core takes the date and time (see `core/rtc.rs`).
+    pub rtc: Option<CoreRtc>,
+}
+
+/// The `rtc` object of core.json: the core has a clock, set from the console's before every start.
+#[derive(Clone, Copy, Deserialize)]
+pub struct CoreRtc {
+    #[serde(deserialize_with = "deserialize_hex_u32")]
+    pub address: u32,
 }
 
 /// The `cheats` object of core.json: the core takes cheat codes in MiSTer's layout (16 bytes each: flags with
@@ -385,6 +394,8 @@ pub fn get_core(id: &str) -> Result<CoreInfo, String> {
         cheats: Option<CoreCheats>,
         #[serde(default)]
         diag_log: OptionalJsonValue,
+        #[serde(default)]
+        rtc: Option<CoreRtc>,
     }
 
     #[derive(Deserialize)]
@@ -436,6 +447,13 @@ pub fn get_core(id: &str) -> Result<CoreInfo, String> {
         }
         None => Vec::new(),
     };
+    let rtc = json_core.rtc.filter(|rtc| {
+        let valid = super::rtc::valid_address(rtc.address);
+        if !valid {
+            log::warn!("{id}: ignoring rtc: invalid address");
+        }
+        valid
+    });
 
     // Find the right bitstream (TODO: use a visitor that extracts the right one).
     // https://serde.rs/stream-array.html
@@ -478,6 +496,7 @@ pub fn get_core(id: &str) -> Result<CoreInfo, String> {
         core_dir,
         cheats: json_core.cheats,
         diag_log,
+        rtc,
     };
     add_swap_ab_setting(&mut core);
     Ok(core)
