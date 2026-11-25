@@ -1,35 +1,30 @@
 import { Theme } from "../../theme.slint";
 import { Backend } from "../../common.slint";
-import { ListViewBase } from "../../components/list_view.slint";
-import { SettingType, SettingValue, SettingEntry } from "types.slint";
+import { ListView, ListContainer } from "../../components/list_view.slint";
+import { ChoicePopup } from "../../components/choice_popup.slint";
+import { SettingType, SettingValue, SettingEntry, SettingDatetime } from "types.slint";
 import { DatetimePicker } from "datetime.slint";
-import { ListBox } from "list_box.slint";
 import { Icons } from "../../icons.slint";
 
-export component SettingsListViewItem {
+component SettingsListViewItem {
     in property <SettingEntry> item;
+    in property <bool> focused;
     in property <bool> selected;
-    in property <int> index;
+    in property <SettingDatetime> datetime-draft;
+    in property <int> datetime-part: 0;
 
-    public function handle-selected() -> EventResult {
-        if item.type == SettingType.checkbox {
-            Backend.settings-changed(index, { bool-value: !item.value.bool-value });
-        } else if item.type == SettingType.subpage {
-            Backend.settings-changed(index, { });
-        } else if item.type == SettingType.datetime {
-            return accept;
-        } else if item.type == SettingType.list {
-            return accept;
-        }
-        reject
+    Rectangle {
+        width: root.width;
+        height: root.height;
+        background: root.focused ? Theme.highlight : transparent;
+        border-color: Theme.border;
+        border-width: root.selected ? 1px : 0px;
     }
-
-    min-width: i-text.min-width;
-    min-height: i-text.min-height + 2px;
 
     i-text := Text {
         color: Theme.fg;
         x: 2px;
+        height: 100%;
         text: root.item.name;
         vertical-alignment: center;
         horizontal-alignment: left;
@@ -41,11 +36,12 @@ export component SettingsListViewItem {
         background: Theme.surface;
         x: parent.width - self.width - 4px;
         width: self.height;
-        height: parent.height - 2px;
+        height: parent.height - 4px;
         border-color: Theme.border;
         border-width: 1px;
 
-        if item.value.bool-value: Rectangle {
+        Rectangle {
+            visible: item.value.bool-value;
             x: 2px;
             y: 2px;
             width: parent.width - 4px;
@@ -60,42 +56,155 @@ export component SettingsListViewItem {
     }
     if item.type == SettingType.datetime: DatetimePicker {
         selected: root.selected;
-        dt: item.value.datetime-value;
+        dt: root.selected ? root.datetime-draft : item.value.datetime-value;
+        part: root.datetime-part;
         x: parent.width - self.width - 4px;
         y: (parent.height - self.height) * 50%;
-        on-changed(delta) => {
-            Backend.settings-changed(index, { datetime-value: delta });
-        }
     }
-    if item.type == SettingType.list: ListBox {
+    if item.type == SettingType.list: Text {
         x: parent.width - self.width - 4px;
-        index: item.value.int-value;
-        choices: item.choices;
-        selected: root.selected;
-        on-changed => {
-            Backend.settings-changed(index, { int-value: self.index });
-        }
+        height: 100%;
+        vertical-alignment: center;
+        text: (item.value.int-value >= 0 && item.value.int-value < item.choices.length) ? item.choices[item.value.int-value] : "";
     }
-
-    @children
 }
 
-export component SettingsListView inherits ListViewBase {
+component SettingsListViewBase inherits ListView {
     in property <[SettingEntry]> model;
+    in property <bool> item-selected: false;
+    in property <SettingDatetime> datetime-draft;
+    in property <int> datetime-part: 0;
     num-items: model.length;
 
-    for item[index] in root.model: child-items := SettingsListViewItem {
-        index: index;
+    for item[index] in root.model: SettingsListViewItem {
         item: item;
-        height: self.min-height;
-        selected: (index == root.focus-item) && root.item-selected;
+        height: 20px;
+        focused: index == root.current-item;
+        selected: (index == root.current-item) && root.item-selected;
+        datetime-draft: root.datetime-draft;
+        datetime-part: root.datetime-part;
+    }
+}
 
-        if self.selected: FocusScope {
-            init => {
-                if parent.handle-selected() != EventResult.accept {
-                    root.item-selected = false;
-                }
+export component SettingsListView inherits FocusScope {
+    in property <[SettingEntry]> model;
+    in-out property <int> focus-item <=> i-list.current-item;
+    in property <bool> wrap <=> i-list.wrap;
+
+    horizontal-stretch: 1;
+    vertical-stretch: 1;
+    preferred-width: 100%;
+    preferred-height: 100%;
+
+    private property <bool> item-selected: false;
+    private property <int> datetime-part: 0;
+    private property <SettingDatetime> datetime-draft;
+
+    changed model => {
+        item-selected = false;
+    }
+
+    function step-datetime(delta: int) {
+        datetime-draft = Backend.datetime-add(datetime-draft, {
+            year: datetime-part == 0 ? delta : 0,
+            month: datetime-part == 1 ? delta : 0,
+            day: datetime-part == 2 ? delta : 0,
+            hour: datetime-part == 3 ? delta : 0,
+            min: datetime-part == 4 ? delta : 0,
+        });
+    }
+
+    function activate-item(entry: SettingEntry) {
+        if (entry.type == SettingType.checkbox) {
+            Backend.settings-changed(i-list.current-item, { bool-value: !entry.value.bool-value });
+        } else if (entry.type == SettingType.subpage) {
+            Backend.settings-changed(i-list.current-item, { });
+        } else if (entry.type == SettingType.datetime) {
+            datetime-part = 0;
+            datetime-draft = entry.value.datetime-value;
+            item-selected = true;
+        } else if (entry.type == SettingType.list && entry.choices.length > 0) {
+            i-choice-popup.show();
+        }
+    }
+
+    function handle-datetime-key(event: KeyEvent) -> EventResult {
+        if (event.text == Key.LeftArrow || event.text == Key.RightArrow) {
+            datetime-part = clamp(datetime-part + (event.text == Key.RightArrow ? 1 : -1), 0, 4);
+            return accept;
+        }
+        if (event.text == Key.UpArrow || event.text == Key.DownArrow) {
+            root.step-datetime(event.text == Key.UpArrow ? 1 : -1);
+            return accept;
+        }
+        if (event.text == "a" && !event.repeat) {
+            Backend.settings-changed(i-list.current-item, { datetime-value: root.datetime-draft });
+            item-selected = false;
+            return accept;
+        }
+        if (event.text == "b" && !event.repeat) {
+            item-selected = false;
+            return accept;
+        }
+        reject
+    }
+
+    i-choice-popup := ChoicePopup {
+        width: parent.width;
+        height: parent.height;
+        choices: i-list.has-selection() ? root.model[i-list.current-item].choices : [];
+        initial-item: i-list.has-selection() ? root.model[i-list.current-item].value.int-value : 0;
+        anchor-y: 2px + i-list.current-item * 20px + i-list.viewport-y;
+
+        selected(index) => {
+            if (i-list.has-selection()) {
+                Backend.settings-changed(i-list.current-item, { int-value: index });
             }
         }
+    }
+
+    ListContainer {
+        width: 100%;
+        height: 100%;
+        viewport-y: i-list.viewport-y;
+        viewport-height: i-list.viewport-height;
+        visible-height: i-list.visible-height;
+
+        i-list := SettingsListViewBase {
+            model: root.model;
+            item-selected: root.item-selected;
+            datetime-draft: root.datetime-draft;
+            datetime-part: root.datetime-part;
+        }
+    }
+
+    key-pressed(event) => {
+        if (!item-selected) {
+            if (event.text == Key.UpArrow) {
+                i-list.select-up();
+                return accept;
+            }
+            if (event.text == Key.DownArrow) {
+                i-list.select-down();
+                return accept;
+            }
+            if (event.text == "a" && !event.repeat) {
+                if (i-list.has-selection()) {
+                    root.activate-item(model[i-list.current-item]);
+                }
+                return accept;
+            }
+            return reject;
+        }
+
+        if (!i-list.has-selection()) {
+            item-selected = false;
+            return reject;
+        }
+        if (model[i-list.current-item].type == SettingType.datetime) {
+            return root.handle-datetime-key(event);
+        }
+        item-selected = false;
+        reject
     }
 }

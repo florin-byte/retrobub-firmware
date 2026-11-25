@@ -128,8 +128,7 @@ class HandheldGba extends Module with Core {
     val audio = new AudioV0()
     val host = new HostV0()
     val pmod = new PmodV0()
-    val input = new InputBasicV0()
-    val vibrate = new VibrateV0()
+    val input = new InputBasicV0(hasRumble = true)
     val cartridge = new CartridgePortV0()
     val link = new LinkPortV0()
     val sram = new SramV0()
@@ -348,7 +347,7 @@ class HandheldGba extends Module with Core {
   // Core -> Host commands
   io.host.commandCore.request := linkBridge.io.coreRequest
 
-  io.vibrate.mode := VibrateV0.Mode.Off
+  io.input.rumble.get := false.B
 
   // SDRAM interface and port
   // GB-159: with two cores each core reads ROM through a block-RAM cache (GbaRomBlockCache).
@@ -393,7 +392,7 @@ class HandheldGba extends Module with Core {
 
   gba.io.configGBPlayer := configRegGBPlayer.asBool
   when (gba.io.configGBPlayer && gba.io.gbpRumble) {
-    io.vibrate.mode := VibrateV0.Mode.On
+    io.input.rumble.get := true.B
   }
 
   // Emulated cartridge
@@ -440,7 +439,7 @@ class HandheldGba extends Module with Core {
     doStall := emuCart.io.stall || gba.io.ewramStall
 
     when (emuCart.io.vibrate) {
-      io.vibrate.mode := VibrateV0.Mode.On
+      io.input.rumble.get := true.B
     }
 
     // Disconnect physical cartridge

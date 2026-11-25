@@ -361,6 +361,7 @@ impl Gba {
     pub fn get_core_info() -> CoreInfo {
         CoreInfo {
             cheats: None,
+            diag_log: Vec::new(),
             id: "Game-Bub.GBA".try_into().unwrap(),
             name: "Game Boy Advance".try_into().unwrap(),
             author: "Game Bub".try_into().unwrap(),
@@ -382,6 +383,7 @@ impl Gba {
                     dependent_on_0: true,
                     initialize: true,
                     on_demand: false,
+                    disc: false,
 
                     address: 0x2000_0000, // Nowhere (unmapped)
                     max_size: 0,
@@ -402,6 +404,7 @@ impl Gba {
                     dependent_on_0: false,
                     initialize: false,
                     on_demand: false,
+                    disc: false,
 
                     address: ROM_ADDRESS, // SDRAM
                     max_size: 32 * 1024 * 1024,
@@ -421,6 +424,7 @@ impl Gba {
                     dependent_on_0: true,
                     initialize: true,
                     on_demand: false,
+                    disc: false,
 
                     address: 0x4000_0000, // SRAM
                     max_size: 128 * 1024 + 16,
@@ -440,6 +444,7 @@ impl Gba {
                     dependent_on_0: false,
                     initialize: false,
                     on_demand: false,
+                    disc: false,
 
                     address: 0x1000_0000,
                     max_size: 0,

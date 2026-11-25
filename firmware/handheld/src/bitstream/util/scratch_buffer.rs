@@ -4,7 +4,9 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-// The GBA save type detector reads the data as u32 words (align_to::<u32>), so the buffer must be 4-aligned.
+// 4-byte aligned with `data` first: the GBA save type detector reads the data as u32 words
+// (align_to::<u32>), and ESP-IDF's SDMMC driver can use multi-sector DMA instead of falling back to
+// single-sector bounce transfers.
 #[repr(C, align(4))]
 pub struct ScratchBuffer<const N: usize> {
     data: UnsafeCell<[u8; N]>,

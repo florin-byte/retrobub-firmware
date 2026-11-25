@@ -45,15 +45,11 @@ export struct CheatCell {
     radio: bool,
 }
 
-export global Palette { }
+export { Palette } from "std-widgets.slint";
 
 export global Global {
     // Window height
     in-out property <length> window-height;
-    // Whether Home is currently pressed.
-    in-out property <bool> home-pressed: false;
-    // Whether the current pressing of Home was used for a shortcut key combo.
-    in-out property <bool> home-consumed;
     out property <ScreenId> current-screen: MainMenu;
     // Whether the UI is transparent. Start true for the boot animation.
     in-out property <bool> ui-transparent: true;
@@ -81,13 +77,11 @@ export global Backend {
 
     in property <bool> sdcard-mounted: true;
 
-    in-out property <bool> volume-visible: false;
-    in-out property <int> volume-level: 50;
-    in property <int> volume-increment: 5;
+    in property <bool> volume-visible: false;
+    in property <int> volume-level: 50;
 
-    in-out property <bool> brightness-visible: false;
-    in-out property <int> brightness-level: 50;
-    in property <int> brightness-increment: 5;
+    in property <bool> brightness-visible: false;
+    in property <int> brightness-level: 50;
 
     in property <int> battery-level: 11;
     in property <bool> battery-charging: false;
@@ -138,8 +132,6 @@ export global Backend {
     in property <[string]> cheat-details;
     in property <int> cheats-on;
 
-    callback volume-changed(int);
-    callback brightness-changed(int);
     callback power-off();
     callback reboot();
 

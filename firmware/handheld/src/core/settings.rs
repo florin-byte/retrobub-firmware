@@ -76,6 +76,12 @@ impl CoreManager {
             None => return,
         };
 
+        if let Action { next_disc: Some(file), .. } = &setting.inner {
+            let file = *file;
+            self.next_disc(file);
+            return;
+        }
+
         // Save updated value in core settings.
         let value = match &setting.inner {
             Action { value, .. } => *value,

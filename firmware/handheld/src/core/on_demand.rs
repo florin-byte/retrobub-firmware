@@ -222,7 +222,7 @@ impl CoreManager {
     }
 }
 
-fn notify(text: String) {
+pub(super) fn notify(text: String) {
     ui::send(ui::Message::Notification(ui::Notification::new_short(text)));
 }
 

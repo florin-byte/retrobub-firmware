@@ -1,10 +1,40 @@
 # Retro Bub firmware for the Game Bub
 
-This is my firmware for the [Game Bub](https://github.com/elipsitz/gamebub). It includes Eli's 1.1.0-beta4 changes with
-the things I added and fixed. The repo also has the FPGA framework and the built-in cores (boot, Game Boy / Game Boy
+This is my firmware for the [Game Bub](https://github.com/elipsitz/gamebub). It includes Eli's changes up to firmware
+1.0.3 with the things I added and fixed. The repo also has the FPGA framework and the built-in cores (boot, Game Boy / Game Boy
 Color and Game Boy Advance) with my fixes, so you can build all of it. It is not the official Game Bub firmware.
 
 The ready-to-flash files are in the [releases](../../releases).
+
+## Update v0.6.0 (25 Nov 2026)
+
+This one brings Eli's newer firmware work (his `v1.1-beta` branch up to `5fea463`, firmware 1.0.3) and adds disc
+images, which the [Sega Saturn core](https://github.com/florin-byte/gamebub-saturn) needs.
+
+From Eli:
+- New lists in every menu, built only for the rows on the screen, and a small popup for choosing a value instead of
+  the old list box. L and R scroll the core list by pages.
+- The screen dims after a while without input (Settings).
+- The power and volume buttons are handled in the firmware's Rust code.
+- A core can ask for a minimum firmware version (`min_firmware` in `core.json`). Stock firmware requires the field;
+  mine also loads cores that do not have it, so the cores you have keep working.
+- SD card transfers aligned for DMA and a larger fast-seek map, for big and fragmented files.
+
+Mine:
+- **Disc images for cores with a CD drive** (`"disc": true` in `files.json`): `.cue` with one or many `.bin` files,
+  a single `.bin`, or `.iso`; data and audio tracks; the table of contents for the core; changing the disc from the
+  menu (Next disc). The firmware does the disc so the core does not have to, see the Saturn core's README. CHD images
+  are not supported.
+- The in-game Settings keep their look over the game (outlined rows, the value changed in place with Left / Right);
+  Eli's popup is used in the menus outside the game.
+- Saves are still written to a temporary file first and the previous one kept as `.bak`.
+
+The built-in cores (boot, Game Boy / Game Boy Color, Game Boy Advance) and the Dual Core Link files are the ones
+from v0.5.0, not rebuilt: only the firmware changed. The FPGA sources in this repo do have Eli's newer framework
+(vibration in the input interface, a wider frame buffer read), which those bitstreams do not use yet.
+
+I tested the rev2 build on my console: the menus in and out of a game, volume and brightness, games on several
+cores, and the Saturn core. The rev4 file is built from the same source, but nobody has run it yet.
 
 ## Update v0.5.1 (19 Nov 2026)
 

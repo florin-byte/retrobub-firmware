@@ -1,0 +1,22 @@
+[package]
+name = "ui_host_tests"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+# Same Slint version as the firmware and its feature set minus "serde" (no backend, software renderer only), so the crates
+# already fetched for the firmware build are enough: this crate must build with --offline.
+[dependencies]
+slint = { version = "~1.12.1", default-features = false, features = [
+    "compat-1-2",
+    "unsafe-single-threaded",
+    "libm",
+    "renderer-software",
+] }
+# used by the firmware's src/ui/slint.rs, which is compiled into this crate unchanged
+log = "0.4"
+
+[build-dependencies]
+slint-build = "~1.12.1"

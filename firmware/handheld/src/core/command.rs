@@ -24,6 +24,9 @@ pub const FILE_READ: u32 = 0x0402;
 pub const FILE_WRITE: u32 = 0x0403;
 pub const FILE_FLUSH: u32 = 0x0404;
 
+/// Get the table of contents of an on-demand disc (file ID, core address).
+pub const DISC_GET_TOC: u32 = 0x8400;
+
 // Status
 #[allow(unused)]
 pub const STATUS_UNKNOWN: u32 = 0;
@@ -152,6 +155,7 @@ impl CoreManager {
             FILE_READ => Self::handle_file_read,
             FILE_WRITE => Self::handle_file_write,
             FILE_FLUSH => Self::handle_file_flush,
+            DISC_GET_TOC => Self::handle_disc_get_toc,
             _ => {
                 log::warn!("Unknown core request 0x{:04X}", command_id);
                 // Mark command as "done" and "error".

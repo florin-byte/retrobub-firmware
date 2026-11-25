@@ -1,6 +1,7 @@
-use std::{cell::RefCell, collections::VecDeque, path::PathBuf, rc::Rc, time::Duration};
+use std::{cell::RefCell, collections::VecDeque, path::PathBuf, time::Duration};
 
-use slint::{ComponentHandle, Global, Timer, TimerMode, Weak};
+use slint::{ComponentHandle, Timer, TimerMode, Weak};
+use static_cell::StaticCell;
 
 use crate::kvs;
 use crate::{core::CoreManager, device::Device};
@@ -19,8 +20,18 @@ mod tools;
 
 pub use game::{CheatsPage, CheatsPageCell, CheatsPageRow, CoreSettingUiItem};
 
+const LEVEL_INCREMENT: i32 = 5;
+
+#[derive(Copy, Clone)]
+pub(super) enum LevelSetting {
+    Volume,
+    Brightness,
+}
+
 pub struct UiState {
     root: Weak<MainWindow>,
+
+    level_bar_timer: Timer,
 
     notification_timer: Timer,
     notification_queue: VecDeque<notifications::Notification>,
@@ -37,24 +48,28 @@ pub struct UiState {
     link_timer: Timer,
 }
 
+static UI_STATE: StaticCell<RefCell<UiState>> = StaticCell::new();
+
 impl UiState {
-    pub fn new(root: &MainWindow, device: &mut Device) -> Rc<RefCell<Self>> {
-        let state: UiState = UiState {
-            root: root.as_weak(),
-            notification_timer: Timer::default(),
-            notification_queue: VecDeque::new(),
-            notification_active: false,
-            game_cartridge: false,
-            settings: settings::SettingsState::default(),
-            core_file_select_directory: PathBuf::new(),
-            core_file_select_filename: String::new(),
-            core_file_select_pending: None,
-            core_file_select_timer: Timer::default(),
-            clock_timer: Timer::default(),
-            link_timer: Timer::default(),
-        };
-        let state = Rc::new(RefCell::new(state));
-        state.borrow_mut().setup(state.clone(), device);
+    pub fn new(root: &MainWindow, device: &mut Device) -> &'static RefCell<Self> {
+        let state = UI_STATE.init_with(|| {
+            RefCell::new(UiState {
+                root: root.as_weak(),
+                level_bar_timer: Timer::default(),
+                notification_timer: Timer::default(),
+                notification_queue: VecDeque::new(),
+                notification_active: false,
+                game_cartridge: false,
+                settings: settings::SettingsState::default(),
+                core_file_select_directory: PathBuf::new(),
+                core_file_select_filename: String::new(),
+                core_file_select_pending: None,
+                core_file_select_timer: Timer::default(),
+                clock_timer: Timer::default(),
+                link_timer: Timer::default(),
+            })
+        });
+        state.borrow_mut().setup(state, device);
         state
     }
 
@@ -66,15 +81,59 @@ impl UiState {
         backend.set_battery_charging(is_charging);
     }
 
-    fn setup(&mut self, state: Rc<RefCell<UiState>>, device: &mut Device) {
+    pub(super) fn adjust_level(&self, setting: LevelSetting, up: bool) {
+        let delta = if up {
+            LEVEL_INCREMENT
+        } else {
+            -LEVEL_INCREMENT
+        };
+        let root = self.root.unwrap();
+        let backend = root.global::<Backend>();
+
+        match setting {
+            LevelSetting::Volume => {
+                let level = (backend.get_volume_level() + delta).clamp(0, 100);
+                backend.set_volume_level(level);
+                backend.set_volume_visible(true);
+                backend.set_brightness_visible(false);
+                let volume = ((level * (u8::MAX as i32) + 50) / 100) as u8;
+                Device::lock().dac.set_volume(volume).unwrap();
+                kvs::keys::VOLUME.set(&volume);
+            }
+            LevelSetting::Brightness => {
+                let level = (backend.get_brightness_level() + delta).clamp(0, 100);
+                backend.set_brightness_level(level);
+                backend.set_brightness_visible(true);
+                backend.set_volume_visible(false);
+                let brightness = (level as f32) / 100.0;
+                Device::lock().set_brightness(brightness);
+                kvs::keys::BRIGHTNESS.set(&brightness);
+            }
+        }
+
+        let weak = self.root.clone();
+        self.level_bar_timer.start(
+            TimerMode::SingleShot,
+            Duration::from_millis(1000),
+            move || {
+                if let Some(root) = weak.upgrade() {
+                    let backend = root.global::<Backend>();
+                    backend.set_volume_visible(false);
+                    backend.set_brightness_visible(false);
+                }
+            },
+        );
+    }
+
+    fn setup(&mut self, state: &'static RefCell<UiState>, device: &mut Device) {
         let root = self.root.unwrap();
         let backend = root.global::<Backend>();
 
         let battery_level = device.fuel_gauge.get_battery_level().unwrap_or(0.0);
         let is_charging = device.get_vbus_pgood() && device.get_battery_is_charging();
         self.update_battery_level(battery_level, is_charging);
-        backend.set_volume_level(((kvs::keys::VOLUME.get().unwrap() as i32) * 100) / 255);
-        backend.set_brightness_level((kvs::keys::BRIGHTNESS.get().unwrap() * 100.0) as i32);
+        backend.set_volume_level(((kvs::keys::VOLUME.get().unwrap() as i32) * 100 + 127) / 255);
+        backend.set_brightness_level((kvs::keys::BRIGHTNESS.get().unwrap() * 100.0).round() as i32);
         backend.set_hardware_version(crate::hwinfo::get_hardware_version().to_string().into());
         backend.set_hardware_serial(crate::hwinfo::get_serial_number().to_string().into());
         backend.set_firmware_version(env!("CARGO_PKG_VERSION").into());
@@ -123,12 +182,12 @@ impl UiState {
         self.clock_timer
             .start(TimerMode::Repeated, Duration::from_secs(1), update_clock);
 
-        self.setup_setup(&state, device);
-        self.setup_main_menu(&state, device);
-        self.setup_game(&state, device);
-        self.setup_tools(&state, device);
-        self.setup_settings(&state, device);
-        self.setup_cores(&state, device);
+        self.setup_setup(state, device);
+        self.setup_main_menu(state, device);
+        self.setup_game(state, device);
+        self.setup_tools(state, device);
+        self.setup_settings(state, device);
+        self.setup_cores(state, device);
 
         // Check for first boot
         if kvs::keys::SETUP_STAGE.get().unwrap_or_default() == 0 {
@@ -146,55 +205,16 @@ impl UiState {
                         "Firmware updated to {}",
                         env!("CARGO_PKG_VERSION")
                     ));
-                    self.queue_notification(state.clone(), notification);
+                    self.queue_notification(state, notification);
                 }
             }
         }
 
-        let state_ = state.clone();
         backend.on_screen_enter(move |screen| {
             // Called when a new screen is entered, before the new frame is rendered.
             log::info!("Screen enter: {:?}", screen);
             if screen == ScreenId::Settings {
-                state_.borrow_mut().on_settings_enter()
-            }
-        });
-
-        backend.on_volume_changed({
-            let state_ = state.clone();
-            let timer = Timer::default();
-            move |value| {
-                let volume = ((value * (u8::MAX as i32)) / 100) as u8;
-                Device::lock().dac.set_volume(volume).unwrap();
-                // Start the timer to hide the bar.
-                let state_ = state_.clone();
-                timer.start(
-                    TimerMode::SingleShot,
-                    Duration::from_millis(1000),
-                    move || {
-                        kvs::keys::VOLUME.set(&volume);
-                        Backend::get(&state_.borrow().root.unwrap()).set_volume_visible(false);
-                    },
-                )
-            }
-        });
-
-        backend.on_brightness_changed({
-            let state_ = state.clone();
-            let timer = Timer::default();
-            move |value| {
-                let brightness = (value as f32) / 100.0;
-                Device::lock().set_brightness(brightness);
-                // Start the timer to hide the bar.
-                let state_ = state_.clone();
-                timer.start(
-                    TimerMode::SingleShot,
-                    Duration::from_millis(1000),
-                    move || {
-                        kvs::keys::BRIGHTNESS.set(&brightness);
-                        Backend::get(&state_.borrow().root.unwrap()).set_brightness_visible(false);
-                    },
-                )
+                state.borrow_mut().on_settings_enter()
             }
         });
 

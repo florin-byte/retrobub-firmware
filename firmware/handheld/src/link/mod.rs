@@ -557,6 +557,12 @@ pub(crate) fn set_core_paused(paused: bool) {
     unsafe { sys::gamebub_cwl_set_paused(paused) };
 }
 
+/// True while a link-capable core (GB/GBA) runs: its core requests belong to the link bridge.
+/// Other cores' requests are on-demand file I/O for the Worker (GB-196).
+pub(crate) fn link_core_running() -> bool {
+    CORE_RUNNING.load(Ordering::Acquire)
+}
+
 /// Set only on Worker, after CORE_RUN or after the radio task has stopped.
 pub(crate) fn set_link_running(running: bool, gba: bool) {
     let caps = if running {

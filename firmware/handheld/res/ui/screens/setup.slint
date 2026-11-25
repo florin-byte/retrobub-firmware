@@ -31,45 +31,48 @@ component ControlsPage inherits Rectangle {
         image-rendering: pixelated;
         colorize: Theme.text;
 
-        if step == 0: Rectangle {
+        Rectangle {
             background: highlight;
             width: rev2 ? 7px : 8px;
             height: rev2 ? 7px : 8px;
             x: rev2 ? 65px : 181px;
             y: rev2 ? 72px : 30px;
             border-radius: 3px;
-            visible: anim;
+            visible: step == 0 && anim;
         }
 
-        if step == 1: Rectangle {
+        Rectangle {
             background: highlight;
             width: rev2 ? 7px : 8px;
             height: rev2 ? 7px : 8px;
             x: rev2 ? 59px : 173px;
             y: rev2 ? 78px : 38px;
             border-radius: 3px;
-            visible: anim;
+            visible: step == 1 && anim;
         }
 
-        if step == 2: Rectangle {
+        Rectangle {
             background: highlight;
             width: rev2 ? 2px : 4px;
             height: rev2 ? 6px : 2px;
             x: rev2 ? 78px : 135px;
             y: rev2 ? 12px : 1px;
-            visible: anim;
+            visible: step == 2 && anim;
         }
 
-        if step == 3 || step == 5: Rectangle {
+        Rectangle {
             background: highlight;
             width: 5px;
             height: 5px;
             x: rev2 ? 38px : 29px;
             y: rev2 ? 84px : 68px;
             border-radius: 3px;
-            visible: step == 5 || anim;
+            visible: (step == 3 && anim) || step == 5;
         }
-        if step == 4 || step == 5: Rectangle {
+
+        Rectangle {
+            visible: step == 4 || step == 5;
+
             Rectangle {
                 background: highlight;
                 width: rev2 ? 2px : 6px;
@@ -104,35 +107,16 @@ component ControlsPage inherits Rectangle {
         y: 24px;
         height: self.min-height;
 
-        if step == 0: Text {
-            color: Theme.fg;
-            text: "Press to Confirm";
-        }
-
-        if step == 1: Text {
-            color: Theme.fg;
-            text: "Press to go Back";
-        }
-
-        if step == 2: Text {
-            color: Theme.fg;
-            text: "Press to open Power menu";
-        }
-
-        if step == 3: Text {
-            color: Theme.fg;
-            text: "Press to go Home";
-        }
-
-        if step == 4: Text {
-            color: Theme.fg;
-            text: "Press to adjust volume";
-        }
-
-        if step == 5: Text {
+        Text {
             color: Theme.fg;
             // The long text does not fit on the 240 px wide rev2 UI.
-            text: rev2 ? "Press Home + Volume for brightness" : "Press Home + Volume to adjust brightness";
+            text: step == 0 ? "Press to Confirm"
+                : step == 1 ? "Press to go Back"
+                : step == 2 ? "Press to open Power menu"
+                : step == 3 ? "Press to go Home"
+                : step == 4 ? "Press to adjust volume"
+                : step == 5 ? (rev2 ? "Press Home + Volume for brightness" : "Press Home + Volume to adjust brightness")
+                : "";
         }
     }
 
@@ -319,7 +303,13 @@ export component SetupScreen inherits ScreenBase {
             } else if (event.text == "b") {
                 prev-page();
                 accept
-            } else if (page == max-page && event.text == "Home") {
+            } else {
+                reject
+            }
+        }
+
+        key-released(event) => {
+            if (page == max-page && event.text == "Home") {
                 Backend.setup-complete();
                 Global.set-screen(ScreenId.MainMenu);
                 accept

@@ -6,26 +6,47 @@ mod state;
 
 use ::slint::platform::WindowAdapter;
 use ::slint::{ComponentHandle, WindowSize};
-pub use buttons::{Button, ButtonEvent, ButtonMap};
+use buttons::ButtonEvent;
+pub use buttons::{Button, ButtonMap};
+use static_cell::{ConstStaticCell, StaticCell};
 use std::path::PathBuf;
 use std::sync::{mpsc, OnceLock};
 use std::time::Duration;
-use std::{cell::RefCell, rc::Rc, sync::mpsc::Receiver, time::Instant};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+    sync::mpsc::Receiver,
+    time::Instant,
+};
 
 use ::slint::{
     platform::software_renderer::{LineBufferProvider, RepaintBufferType, TargetPixel},
     PhysicalSize, Timer, TimerMode,
 };
 
-use crate::device::Device;
+use crate::device::{Device, DisplayMode};
 use crate::input::{self, InputManager};
+use crate::kvs;
 pub use crate::ui::state::{CheatsPage, CheatsPageCell, CheatsPageRow, CoreSettingUiItem};
 use crate::worker;
 pub use state::notifications::Notification;
 
 use self::{slint::Argb1555, slint::MinimalSoftwareWindow, state::UiState};
 
-const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const SETUP_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const DIM_BRIGHTNESS: f32 = 0.10;
+
+fn active_idle_timeout() -> Option<Duration> {
+    if kvs::keys::SETUP_STAGE.get().unwrap_or_default() == 0 {
+        return Some(SETUP_IDLE_TIMEOUT);
+    }
+    match kvs::keys::DIM_TIMEOUT.get().unwrap_or(0) {
+        0 => Some(Duration::from_secs(60)),
+        1 => Some(Duration::from_secs(180)),
+        2 => Some(Duration::from_secs(300)),
+        _ => None,
+    }
+}
 
 cfg_if::cfg_if! {
     if #[cfg(any(feature = "rev1", feature = "rev2"))] {
@@ -139,24 +160,34 @@ impl<'a, 'b, 'c> LineBufferProvider for &mut FpgaLineRenderer<'a, 'b, 'c> {
     }
 }
 
+static UI_CELL: StaticCell<UI> = StaticCell::new();
+static FRAMEBUFFER: ConstStaticCell<[Argb1555; DISPLAY_WIDTH]> =
+    ConstStaticCell::new([Argb1555::TRANSPARENT; DISPLAY_WIDTH]);
+static LCD_LINE_BUFFER: ConstStaticCell<[u8; DISPLAY_WIDTH * 3 * 2]> =
+    ConstStaticCell::new([0; DISPLAY_WIDTH * 3 * 2]);
+
 #[allow(unused)]
 pub struct UI {
-    framebuffer: Vec<Argb1555>,
-    lcd_line_buffer: Vec<u8>,
+    framebuffer: &'static mut [Argb1555],
+    lcd_line_buffer: &'static mut [u8],
     /// Classes of the in-game overlay, for its outline (GB-181).
     outline: outline::Outline,
     window: Rc<MinimalSoftwareWindow>,
     message_queue: Receiver<Message>,
     root: slint::MainWindow,
-    state: Rc<RefCell<UiState>>,
+    state: &'static RefCell<UiState>,
     button_event_detector: buttons::ButtonEventDetector,
     idle_timer: Timer,
+    idle_timeout: Option<Duration>,
+    is_dimmed: Rc<Cell<bool>>,
+    home_pressed: bool,
+    home_consumed: bool,
     #[cfg(feature = "link-diag")]
     cheats_render_probe: bool,
 }
 
 impl UI {
-    pub fn new(device: &mut Device) -> Self {
+    pub fn init(device: &mut Device) -> &'static mut Self {
         // Same row as the logo of the main menu (status bar 16 + padding 4 + centering 22, see
         // main_menu.slint), so that the logo does not move when the UI takes over.
         device
@@ -183,17 +214,14 @@ impl UI {
                 .unwrap(); // Start animation (no loop)
         });
 
-        // Set up the idle timer
         let idle_timer = Timer::default();
-        idle_timer.start(TimerMode::Repeated, IDLE_TIMEOUT, || {
-            worker::send(worker::Message::IdleTimerExpired);
-        });
 
         let (sender, receiver) = mpsc::channel::<Message>();
         SENDER.set(sender).expect("UI already initialized");
 
-        let framebuffer = vec![Argb1555::from_rgb(0, 0, 0); DISPLAY_WIDTH];
-        let lcd_line_buffer = vec![0u8; DISPLAY_WIDTH * 3 * 2];
+        let framebuffer = FRAMEBUFFER.take();
+        framebuffer.fill(Argb1555::from_rgb(0, 0, 0));
+        let lcd_line_buffer = LCD_LINE_BUFFER.take();
 
         let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
         ::slint::platform::set_platform(Box::new(slint::HandheldPlatform {
@@ -206,21 +234,118 @@ impl UI {
         )));
 
         let root = slint::MainWindow::new().unwrap();
+        let state = UiState::new(&root, device);
 
-        UI {
+        let ui = UI_CELL.init_with(|| UI {
             framebuffer,
             lcd_line_buffer,
             outline: outline::Outline::new(DISPLAY_WIDTH, DISPLAY_HEIGHT),
             window,
             message_queue: receiver,
-            state: UiState::new(&root, device),
+            state,
             root,
             button_event_detector: buttons::ButtonEventDetector::new(),
             idle_timer,
+            idle_timeout: None,
+            is_dimmed: Rc::new(Cell::new(false)),
+            home_pressed: false,
+            home_consumed: false,
             #[cfg(feature = "link-diag")]
             cheats_render_probe: false,
+        });
+        ui.reset_idle_timer();
+        ui
+    }
+
+    fn restore_brightness(&mut self) {
+        if self.is_dimmed.replace(false) {
+            Device::lock().set_brightness(kvs::keys::BRIGHTNESS.get().unwrap());
         }
 
+    }
+
+    fn reset_idle_timer(&mut self) {
+        let desired = active_idle_timeout();
+        if desired == self.idle_timeout {
+            if self.idle_timeout.is_some() {
+                self.idle_timer.restart();
+            }
+            return;
+        }
+
+        self.idle_timeout = desired;
+        match desired {
+            Some(timeout) => {
+                let is_dimmed = self.is_dimmed.clone();
+                self.idle_timer
+                    .start(TimerMode::SingleShot, timeout, move || {
+                        if kvs::keys::SETUP_STAGE.get().unwrap_or_default() == 0 {
+                            worker::send(worker::Message::IdleTimerExpired);
+                            return;
+                        }
+                        let mut device = Device::lock();
+                        if device.get_display_mode() == DisplayMode::Internal {
+                            let brightness = kvs::keys::BRIGHTNESS.get().unwrap();
+                            let dimmed = brightness.min(DIM_BRIGHTNESS);
+                            if dimmed < brightness {
+                                device.set_brightness(dimmed);
+                                is_dimmed.set(true);
+                            }
+                        }
+                    });
+            }
+            None => {
+                self.idle_timer.stop();
+            }
+        }
+    }
+
+    fn handle_button_event(&mut self, event: ButtonEvent) {
+        match event {
+            ButtonEvent::Pressed(Button::Home, repeat) => {
+                if !repeat {
+                    self.home_pressed = true;
+                    self.home_consumed = false;
+                }
+                return;
+            }
+            ButtonEvent::Released(Button::Home) => {
+                self.home_pressed = false;
+                if std::mem::take(&mut self.home_consumed) {
+                    return;
+                }
+            }
+            ButtonEvent::Pressed(button @ (Button::VolUp | Button::VolDown), _) => {
+                let setting = if self.home_pressed {
+                    self.home_consumed = true;
+                    state::LevelSetting::Brightness
+                } else {
+                    state::LevelSetting::Volume
+                };
+                self.state
+                    .borrow()
+                    .adjust_level(setting, button == Button::VolUp);
+                return;
+            }
+            ButtonEvent::Released(Button::VolUp | Button::VolDown) => {
+                return;
+            }
+            ButtonEvent::Pressed(Button::Power, _) => {
+                return;
+            }
+            ButtonEvent::Released(Button::Power) => {
+                // Close any auto-closing popup synchronously before toggling PowerMenu so
+                // focus stays consistent.
+                self.window
+                    .dispatch_event(::slint::platform::WindowEvent::KeyPressed {
+                        text: ::slint::platform::Key::Escape.into(),
+                    });
+                self.root.invoke_toggle_power_menu();
+                return;
+            }
+            _ => {}
+        }
+        self.window.dispatch_event(event.into());
     }
 
     pub fn run(&mut self) -> ! {
@@ -235,8 +360,9 @@ impl UI {
                 pending_message = self.message_queue.try_recv().ok();
             }
             for button_event in self.button_event_detector.update(None) {
-                self.window.dispatch_event(button_event.into());
-                self.idle_timer.restart();
+                self.restore_brightness();
+                self.handle_button_event(button_event);
+                self.reset_idle_timer();
             }
 
             ::slint::platform::update_timers_and_animations();
@@ -256,7 +382,7 @@ impl UI {
                 {
                     let mut line_renderer = FpgaLineRenderer {
                         device: &mut device,
-                        line_buffer: &mut self.framebuffer,
+                        line_buffer: self.framebuffer,
                         outline: if outline::enabled() { Some(&mut self.outline) } else { None },
                     };
                     renderer.render_by_line(&mut line_renderer);
@@ -300,10 +426,11 @@ impl UI {
     fn dispatch_message(&mut self, message: Message) {
         match message {
             Message::Button(state) => {
-                self.idle_timer.restart();
+                self.restore_brightness();
                 for button_event in self.button_event_detector.update(Some(state)) {
-                    self.window.dispatch_event(button_event.into());
+                    self.handle_button_event(button_event);
                 }
+                self.reset_idle_timer();
             }
             Message::BatteryStatus { level, is_charging } => {
                 self.state.borrow_mut().update_battery_level(level, is_charging);
@@ -343,19 +470,23 @@ impl UI {
             Message::Notification(notification) => {
                 self.state
                     .borrow_mut()
-                    .queue_notification(self.state.clone(), notification);
+                    .queue_notification(self.state, notification);
             }
             Message::DockBegin { serial, firmware } => {
+                self.restore_brightness();
+                self.reset_idle_timer();
                 let backend = self.root.global::<slint::Backend>();
                 backend.set_dock_serial(serial.into());
                 backend.set_dock_firmware_version(firmware.into());
                 backend.set_docked(true);
             }
             Message::DockEnd => {
+                self.restore_brightness();
+                self.reset_idle_timer();
                 self.root.global::<slint::Backend>().set_docked(false);
             }
             Message::Screenshot => {
-                match screenshot::save_ui_screenshot(&self.window, &mut self.framebuffer) {
+                match screenshot::save_ui_screenshot(&self.window, self.framebuffer) {
                     Ok(f) => log::info!("Saved UI screenshot to {f}"),
                     Err(e) => log::error!("Screenshot error: {e}"),
                 }

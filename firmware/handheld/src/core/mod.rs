@@ -1,4 +1,5 @@
 use std::{
+    fmt::Write as FmtWrite,
     fs::File,
     io::BufReader,
     path::PathBuf,
@@ -22,9 +23,12 @@ use settings::CoreSettings;
 
 mod cheats;
 mod command;
+mod disc;
+pub mod diag_log;
 mod error;
 mod file_selection;
 mod files;
+mod files_disc;
 mod files_on_demand;
 mod handler;
 pub mod info;
@@ -57,6 +61,7 @@ pub struct CoreManager {
     selected_files: Vec<Option<PathBuf>>,
     /// The currently open on-demand file, if any.
     open_on_demand_file: Option<OnDemandFile>,
+    open_disc: Option<(u16, disc::DiscImage)>,
     run_cartridge: bool,
     /// The game's cheats (core.json `cheats` and a `.cht` next to the ROM).
     cheats: Option<cheats::GameCheats>,
@@ -85,6 +90,7 @@ impl CoreManager {
             core_settings: None,
             selected_files: Vec::new(),
             open_on_demand_file: None,
+            open_disc: None,
             run_cartridge: false,
         }
     }
@@ -168,10 +174,11 @@ impl CoreManager {
             .file_paths
             .retain(|(i, _)| core.files.iter().any(|f| f.id == *i && f.user_selected));
 
-        // Validate and apply defaults.
+        // Validate and apply defaults. Disc actions have no persisted value.
         settings.settings = core
             .settings
             .iter()
+            .filter(|setting| !matches!(setting.inner, CoreSettingType::Action { next_disc: Some(_), .. }))
             .map(|setting| {
                 let value = settings
                     .settings
@@ -227,6 +234,7 @@ impl CoreManager {
     pub fn exit_core(&mut self, released: Option<std::sync::mpsc::Sender<()>>) {
         if self.stage == Stage::Running {
             let _ = self.run_core_command(&[command::CORE_HALT], &mut [], NOTIFY_TIMEOUT);
+            self.log_core_diag("exit");
 
             if let Err(e) = self.persist_files() {
                 log::error!("Error saving: {}", e);
@@ -303,6 +311,7 @@ impl CoreManager {
         self.stage = Stage::Idle;
         self.selected_files.clear();
         self.open_on_demand_file = None;
+        self.open_disc = None;
 
         InputManager::lock().clear_core_input_caps();
 
@@ -438,6 +447,7 @@ impl CoreManager {
         let _ = Device::lock().fpga.write_u32(fpga::REG_CTRL_VIBRATE, 1);
 
         let _ = self.run_core_command(&[command::CORE_RUN], &mut [], NOTIFY_TIMEOUT);
+        self.log_core_diag("start");
         crate::link::set_link_running(
             matches!(&self.core_handler, CoreHandlerImpl::Gameboy(_) | CoreHandlerImpl::Gba(_)),
             matches!(&self.core_handler, CoreHandlerImpl::Gba(_)));
@@ -446,6 +456,31 @@ impl CoreManager {
             crate::link::log_memory("game-before-radio");
         }
         Ok(())
+    }
+
+    fn log_core_diag(&self, phase: &str) {
+        let Some(core) = self.core_info.as_ref() else { return };
+        if core.diag_log.is_empty() {
+            return;
+        }
+
+        let mut line = String::with_capacity(32 + core.id.len() + core.diag_log.len() * 24);
+        let _ = write!(line, "core diag {phase} {}:", core.id);
+        for entry in &core.diag_log {
+            let value = {
+                let mut device = Device::lock();
+                device.fpga.read_u32(entry.address)
+            };
+            match value {
+                Ok(value) => {
+                    let _ = write!(line, " {}={value:08x}", entry.name);
+                }
+                Err(_) => {
+                    let _ = write!(line, " {}=????????", entry.name);
+                }
+            }
+        }
+        log::info!("{line}");
     }
 
     fn load_bitstream(&mut self) {

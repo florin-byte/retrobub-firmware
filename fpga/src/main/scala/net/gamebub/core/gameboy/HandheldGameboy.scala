@@ -74,8 +74,7 @@ class HandheldGameboy extends Module with Core {
     val audio = new AudioV0()
     val host = new HostV0()
     val pmod = new PmodV0()
-    val input = new InputBasicV0()
-    val vibrate = new VibrateV0()
+    val input = new InputBasicV0(hasRumble = true)
     val cartridge = new CartridgePortV0()
     val link = new LinkPortV0()
     val sram = new SramV0()
@@ -418,7 +417,7 @@ class HandheldGameboy extends Module with Core {
   gameboy.io.joypad.select := io.input.buttons.select
 
   // Vibration unused by default.
-  io.vibrate.mode := VibrateV0.Mode.Off
+  io.input.rumble.get := false.B
 
   // PMOD unused
   io.pmod.out := DontCare
@@ -606,7 +605,7 @@ class HandheldGameboy extends Module with Core {
 
     // Connect emulated cartridge
     emuCart.io.cartridge <> gameboy.io.cartridge
-    io.vibrate.mode := Mux(emuCart.io.rumble, VibrateV0.Mode.On, VibrateV0.Mode.Off)
+    io.input.rumble.get := emuCart.io.rumble
     doStall := emuCart.io.stall
 
     // Disconnect physical cartridge

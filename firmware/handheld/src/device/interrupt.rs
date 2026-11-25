@@ -127,7 +127,10 @@ impl Device<'_> {
                     } else {
                         0
                     };
-                    if (fpga_irq & fpga::Irq::CoreRequest.as_flag()) != 0 {
+                    // Core requests of a link-capable core go to the link bridge; any other
+                    // core's requests (on-demand file I/O) go to the Worker (GB-196).
+                    let link_request = crate::link::link_core_running();
+                    if link_request && (fpga_irq & fpga::Irq::CoreRequest.as_flag()) != 0 {
                         // Device is unlocked before waking the higher-priority
                         // CWL task. Yield before reacquiring it for other work.
                         crate::link::core_request();
@@ -212,7 +215,11 @@ impl Device<'_> {
                     }
 
                     if (flags & FLAG_MCU_IRQ.get()) != 0 {
-                        let worker_irq = fpga_irq & !fpga::Irq::CoreRequest.as_flag();
+                        let worker_irq = if link_request {
+                            fpga_irq & !fpga::Irq::CoreRequest.as_flag()
+                        } else {
+                            fpga_irq
+                        };
                         if worker_irq != 0 {
                             worker::send(worker::Message::FpgaIrq(worker_irq));
                         }

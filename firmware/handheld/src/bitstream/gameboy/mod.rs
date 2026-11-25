@@ -208,6 +208,7 @@ impl Gameboy {
     pub fn get_core_info() -> CoreInfo {
         CoreInfo {
             cheats: None,
+            diag_log: Vec::new(),
             id: "Game-Bub.GB".try_into().unwrap(),
             name: "Game Boy / Game Boy Color".try_into().unwrap(),
             author: "Game Bub".try_into().unwrap(),
@@ -232,6 +233,7 @@ impl Gameboy {
                     dependent_on_0: false,
                     initialize: false,
                     on_demand: false,
+                    disc: false,
 
                     address: 0x3000_0000, // SDRAM
                     max_size: 8 * 1024 * 1024,
@@ -251,6 +253,7 @@ impl Gameboy {
                     dependent_on_0: true,
                     initialize: true,
                     on_demand: false,
+                    disc: false,
 
                     address: 0x4000_0000, // SRAM
                     max_size: 128 * 1024 + 48,
@@ -270,6 +273,7 @@ impl Gameboy {
                     dependent_on_0: false,
                     initialize: false,
                     on_demand: false,
+                    disc: false,
 
                     address: 0x1000_0000 + 256,
                     max_size: 0,
@@ -289,6 +293,7 @@ impl Gameboy {
                     dependent_on_0: false,
                     initialize: false,
                     on_demand: false,
+                    disc: false,
 
                     address: 0x1000_0000,
                     max_size: 0,
@@ -308,6 +313,7 @@ impl Gameboy {
                     dependent_on_0: false,
                     initialize: false,
                     on_demand: true,
+                    disc: false,
 
                     address: STATE_ADDRESS,
                     max_size: 0,
@@ -342,7 +348,7 @@ impl Gameboy {
                     address: 0xFFFF_FFFF,
                     mask: 0,
                     default: 0,
-                    inner: CoreSettingType::Action { value: 1, file: None, load: false },
+                    inner: CoreSettingType::Action { value: 1, file: None, load: false, next_disc: None },
                 },
                 CoreSetting {
                     id: SETTING_LOAD_STATE,
@@ -350,7 +356,7 @@ impl Gameboy {
                     address: 0xFFFF_FFFF,
                     mask: 0,
                     default: 0,
-                    inner: CoreSettingType::Action { value: 1, file: None, load: false },
+                    inner: CoreSettingType::Action { value: 1, file: None, load: false, next_disc: None },
                 },
                 CoreSetting {
                     id: SETTING_GB_MODE,

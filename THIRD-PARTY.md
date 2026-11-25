@@ -20,6 +20,8 @@ own copyright headers and license text; this page lists them in one place, with 
 
 GPL-2.0-or-later (`LICENSE-GPL-V2`, `LICENSE-GPL-V3`):
 
+- the disc images of the cores with a CD drive: `firmware/handheld/src/core/disc.rs`, `core/files_disc.rs` and the
+  host tests in `firmware/handheld/host_tests/disc/`; the UI host harness `firmware/handheld/host_tests/ui/`;
 - the firmware additions: `firmware/handheld/src/core/on_demand.rs` (on-demand core files: save states for the cores
   on the SD card), `core/cheats.rs` (cheats from `.cht` files), `util/atomic_file.rs` (safe saves, `.bak`),
   `util/localtime.rs` (time zone), `res/ui/theme.slint` (themes), `res/ui/components/scrolling_text.slint`. They are

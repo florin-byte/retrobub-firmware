@@ -7,7 +7,23 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::device::drivers::fpga;
+use crate::{
+    device::drivers::fpga,
+    fwinfo::{FirmwareVersion, FIRMWARE_VERSION},
+};
+pub use super::diag_log::{validate_diag_log, CoreDiagLog};
+
+#[derive(Default)]
+struct OptionalJsonValue(Option<serde_json::Value>);
+
+impl<'de> Deserialize<'de> for OptionalJsonValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        serde_json::Value::deserialize(deserializer).map(|value| Self(Some(value)))
+    }
+}
 
 pub const DIR_CORES: &str = "/sdcard/cores/";
 
@@ -42,6 +58,8 @@ pub struct CoreInfo {
     pub button_remap: bool,
     /// Cheats chosen in the core's menu, from the game's `.cht` (see `core/cheats.rs`).
     pub cheats: Option<CoreCheats>,
+    /// Core memory words logged once when the core starts and exits.
+    pub diag_log: Vec<CoreDiagLog>,
 }
 
 /// The `cheats` object of core.json: the core takes cheat codes in MiSTer's layout (16 bytes each: flags with
@@ -126,6 +144,9 @@ pub struct CoreFile {
     /// If true, the file is not automatically loaded at startup.
     #[serde(default)]
     pub on_demand: bool,
+    /// Serve this on-demand file as a raw CD image with a table of contents.
+    #[serde(default)]
+    pub disc: bool,
 
     /// The address to load the file to.
     #[serde(default)]
@@ -185,6 +206,9 @@ pub enum CoreSettingType {
         file: Option<u16>,
         #[serde(default)]
         load: bool,
+        /// Switch to the next image of this on-demand disc file.
+        #[serde(default)]
+        next_disc: Option<u16>,
     },
     Checkbox {
         #[serde(deserialize_with = "deserialize_hex_u32")]
@@ -348,6 +372,10 @@ pub fn get_core(id: &str) -> Result<CoreInfo, String> {
 
     #[derive(Deserialize)]
     struct JsonCoreInfo {
+        /// Optional here (upstream requires it): packages made before the field existed, such as
+        /// the cores already on users' cards, must keep loading.
+        #[serde(default)]
+        min_firmware: Option<FirmwareVersion>,
         metadata: JsonCoreMetadata,
         #[serde(deserialize_with = "deserialize_bounded_vec::<_, _, MAX_CORE_BITSTREAMS>")]
         bitstreams: Vec<JsonCoreBitstream>,
@@ -355,6 +383,8 @@ pub fn get_core(id: &str) -> Result<CoreInfo, String> {
         hardware: JsonCoreHardware,
         #[serde(default)]
         cheats: Option<CoreCheats>,
+        #[serde(default)]
+        diag_log: OptionalJsonValue,
     }
 
     #[derive(Deserialize)]
@@ -379,6 +409,15 @@ pub fn get_core(id: &str) -> Result<CoreInfo, String> {
     let json_core: JsonCoreInfo = try_read_json(&core_dir, "core.json")?
         .ok_or_else(|| format!("Missing core.json in /cores/{id}"))?;
 
+    if let Some(min_firmware) = json_core.min_firmware {
+        if FIRMWARE_VERSION < min_firmware {
+            return Err(format!(
+                "Core requires firmware {} or later\n(installed: {})",
+                min_firmware, FIRMWARE_VERSION,
+            ));
+        }
+    }
+
     if json_core.metadata.id.as_str() != id {
         return Err(format!(
             "core.json: metadata.id '{}' does not match dir '{id}'",
@@ -388,6 +427,15 @@ pub fn get_core(id: &str) -> Result<CoreInfo, String> {
     if json_core.metadata.name.trim().is_empty() || json_core.metadata.author.trim().is_empty() {
         return Err("core.json: metadata name and author cannot be empty".into());
     }
+
+    let diag_log = match json_core.diag_log.0.as_ref().map(validate_diag_log) {
+        Some(Ok(entries)) => entries,
+        Some(Err(error)) => {
+            log::warn!("{id}: ignoring invalid diag_log: {error}");
+            Vec::new()
+        }
+        None => Vec::new(),
+    };
 
     // Find the right bitstream (TODO: use a visitor that extracts the right one).
     // https://serde.rs/stream-array.html
@@ -429,6 +477,7 @@ pub fn get_core(id: &str) -> Result<CoreInfo, String> {
         settings,
         core_dir,
         cheats: json_core.cheats,
+        diag_log,
     };
     add_swap_ab_setting(&mut core);
     Ok(core)
@@ -489,7 +538,7 @@ fn add_swap_ab_setting(core: &mut CoreInfo) {
 /// file. Matched by kind rather than by label or address: the label differs ("Reset", "Reset Core") and so
 /// does the register (`0x2000` for most cores, `0x0` for Mega Drive).
 fn is_reset_action(setting: &CoreSetting) -> bool {
-    matches!(setting.inner, CoreSettingType::Action { file: None, .. })
+    matches!(setting.inner, CoreSettingType::Action { file: None, next_disc: None, .. })
         && setting.address != 0xFFFF_FFFF
 }
 
@@ -581,6 +630,7 @@ fn validate_settings(settings: &[CoreSetting]) -> Result<(), String> {
         let firmware_handled = matches!(
             s.inner,
             CoreSettingType::Action { file: Some(_), .. }
+                | CoreSettingType::Action { next_disc: Some(_), .. }
                 | CoreSettingType::List { file_slots: Some(_), .. }
         ) || s.address == fpga::REG_CTRL_BUTTON_REMAP_AB;
         if !firmware_handled && (s.address % 4 != 0 || s.address >= FRAMEWORK_ADDR_START) {

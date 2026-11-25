@@ -312,19 +312,7 @@ class HandheldTop[T <: Core](coreFactory: () => T, revision: Revision) extends M
   }
 
   // Input
-  val input = HandheldInput(core.getInterface("input"))
-
-  // Vibrate
-  val coreVibrate = Wire(VibrateV0.Mode())
-  core.getInterface("vibrate") match {
-    case Some(vibrate: VibrateV0) => {
-      coreVibrate := vibrate.mode
-    }
-    case Some(x) => throw new CoreException("Unknown 'vibrate': " + x.getClass())
-    case None => {
-      coreVibrate := VibrateV0.Mode.Off
-    }
-  }
+  val input = HandheldInput(core.getInterface("input"), clockSystemHz)
 
   // Cartridge Port
   core.getInterface("cartridge") match {
@@ -474,7 +462,7 @@ class HandheldTop[T <: Core](coreFactory: () => T, revision: Revision) extends M
     entries = Seq(
       // Read-only informational registers
       // Framework version
-      0x0000 -> RegisterMap.Entry.r("hB0000003".U),
+      0x0000 -> RegisterMap.Entry.r("hB0000005".U),
       // System clock frequency (Hz)
       0x0004 -> RegisterMap.Entry.r(clockSystemHz.U),
       // Video dimensions
@@ -507,6 +495,7 @@ class HandheldTop[T <: Core](coreFactory: () => T, revision: Revision) extends M
 
       // 0x1200 to 0x12FF: button remap
       // 0x1400 to 0x143F: input slots
+      // 0x1500 to 0x1507: controller rumble
 
       // Framework status
       0x2000 -> RegisterMap.Entry.r(buttonState),
@@ -529,8 +518,9 @@ class HandheldTop[T <: Core](coreFactory: () => T, revision: Revision) extends M
     ++ input.registerEntries
   )
 
+  val framebufferSpiBits = if ((videoColorDepthR + videoColorDepthG + videoColorDepthB) > 16) 32 else 16
   val overlayInterface = Wire(new MemoryInterface(addressWidth = 18, dataWidth = 16))
-  val framebufferInterface = Wire(new MemoryInterface(addressWidth = 18, dataWidth = 16))
+  val framebufferInterface = Wire(new MemoryInterface(addressWidth = 24, dataWidth = framebufferSpiBits))
   // 16 bit prefix: 64 KiB
   // 12 bit prefix: 1 MiB
   // 8 bit prefix: 16 MiB
@@ -591,9 +581,7 @@ class HandheldTop[T <: Core](coreFactory: () => T, revision: Revision) extends M
   }
   input.docked := controlDock.docked
   input.coreFocus := controlCoreFocus
-
-  val vibrateEnabled = controlCoreFocus && controlVibrate.enable && !controlDock.docked
-  io.vibrate := RegNext(coreVibrate === VibrateV0.Mode.On && vibrateEnabled)
+  input.vibrateEnable := controlVibrate.enable
 
   //////////////////////////////////
   // Video
@@ -901,6 +889,20 @@ class HandheldTop[T <: Core](coreFactory: () => T, revision: Revision) extends M
     io.dac.data := regSample(regSample.getWidth - 1)
   }
 
+  //////////////////////////////////
+  // Vibrate
+  //////////////////////////////////
+  withClockAndReset (clock = io.clockIn50Mhz, reset = reset50M) {
+    // Handheld vibration PWM (~24.5 kHz, 0 = off, 255 = 100% on)
+    val syncVibrate = XpmCdcHandshake.continuous(clock, input.handheldVibrate)
+    val vibratePrescaler = Counter(8)
+    val vibratePwmCounter = Counter(255)
+    when (vibratePrescaler.inc()) {
+      vibratePwmCounter.inc()
+    }
+    io.vibrate := RegNext(vibratePwmCounter.value < syncVibrate, false.B)
+  }
+
   // Overlay (host UI) access.
   overlayInterface.dataRead := DontCare
   overlayInterface.done := false.B
@@ -930,19 +932,26 @@ class HandheldTop[T <: Core](coreFactory: () => T, revision: Revision) extends M
   }
   val framebufferInterfaceRead = framebufferInterface.enable && !framebufferInterface.write
   when (framebufferInterfaceRead) {
+    val address = (framebufferInterface.address >> log2Ceil(framebufferSpiBits / 8)).asUInt
     for (i <- 0 until 2) {
       when (regLastFrameComplete === i.U) {
         framebuffers(i).readwritePorts(0).enable := true.B
-        framebuffers(i).readwritePorts(0).address := (framebufferInterface.address >> 1.U).asUInt
+        framebuffers(i).readwritePorts(0).address := address
         framebuffers(i).readwritePorts(0).isWrite := false.B
       }
     }
   }
   framebufferInterface.dataRead := MuxLookup(regLastFrameComplete, 0.U)(
     (0 until 2).map(i => i.U ->
-      RegNext(RegNext(framebuffers(i).readwritePorts(0).readData))
+      RegNext(framebuffers(i).readwritePorts(0).readData)
     ))
-  framebufferInterface.done := RegNext(RegNext(framebufferInterface.enable))
+  val regFramebufferSpiStage = RegInit(0.U(2.W))
+  when (framebufferInterface.enable && regFramebufferSpiStage =/= 2.U) {
+    regFramebufferSpiStage := regFramebufferSpiStage + 1.U
+  } .otherwise {
+    regFramebufferSpiStage := 0.U
+  }
+  framebufferInterface.done := regFramebufferSpiStage === 2.U
 
   //////////////////////////////////
   // Core Connections

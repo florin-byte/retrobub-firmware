@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use std::{
-    io::Read,
+    io::{Cursor, ErrorKind, Read},
     time::{Duration, Instant},
 };
 
@@ -49,6 +49,7 @@ pub const REG_CTRL_CMD_HOST: u32 = 0xF100_1100;
 pub const REG_CTRL_CMD_CORE: u32 = 0xF100_1104;
 
 pub const REG_CTRL_INPUT_SLOT_BASE: u32 = 0xF100_1400;
+pub const REG_CTRL_INPUT_RUMBLE_BASE: u32 = 0xF100_1500;
 
 pub const REG_STATUS_BUTTON: u32 = 0xF100_2000;
 pub const REG_STATUS_CART_SWITCH: u32 = 0xF100_2004;
@@ -368,8 +369,23 @@ where
         #[cfg(feature = "fast-link-spi")]
         self.fast_link_spi.store(0, Ordering::Relaxed);
 
+        // Read the first chunk into `scratch_buf` so the header can be parsed
+        // from memory via a `Cursor` and every subsequent read stays aligned
+        // to the start of `scratch_buf` (sector/word aligned for SDMMC DMA).
+        let mut initial_len = 0;
+        while initial_len < scratch_buf.len() {
+            match bitstream.read(&mut scratch_buf[initial_len..]) {
+                Ok(0) => break,
+                Ok(n) => initial_len += n,
+                Err(e) if e.kind() == ErrorKind::Interrupted => continue,
+                Err(_) => return Err(Error::BitstreamError),
+            }
+        }
+
+        let mut cursor = Cursor::new(&scratch_buf[..initial_len]);
         let header =
-            xilinx::parse_bitstream_header(bitstream).map_err(|_| Error::BitstreamError)?;
+            xilinx::parse_bitstream_header(&mut cursor).map_err(|_| Error::BitstreamError)?;
+        let payload_start = cursor.position() as usize;
 
         // Check that the bitstream was built for this hardware.
         let hardware_version = crate::hwinfo::get_hardware_version();
@@ -410,14 +426,24 @@ where
 
         log::info!("FPGA is in program mode");
         let start_time = Instant::now();
+        let mut read_duration = Duration::ZERO;
 
-        let mut num_read = 0;
+        let first_len = (initial_len - payload_start).min(header.length);
+        if first_len > 0 {
+            self.program_spi
+                .write(&scratch_buf[payload_start..payload_start + first_len])
+                .map_err(|_| Error::ProgramError)?;
+        }
+
+        let mut num_read = first_len;
         while num_read < header.length {
             let amount = (header.length - num_read).min(scratch_buf.len());
             let buf = &mut scratch_buf[0..amount];
+            let read_start = Instant::now();
             bitstream
                 .read_exact(buf)
                 .map_err(|_| Error::BitstreamError)?;
+            read_duration += read_start.elapsed();
             num_read += amount;
 
             self.program_spi
@@ -426,9 +452,10 @@ where
         }
 
         log::info!(
-            "Programmed FPGA, done={}, time={}",
+            "Programmed FPGA, done={}, time={} ms ({} ms read)",
             self.pin_done.is_high().map_err(|_| Error::PinError)?,
             start_time.elapsed().as_millis() as u32,
+            read_duration.as_millis() as u32,
         );
 
         Ok(())

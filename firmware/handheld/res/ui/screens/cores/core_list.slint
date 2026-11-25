@@ -1,54 +1,71 @@
 import { Theme } from "../../theme.slint";
 import { Backend } from "../../common.slint";
-import { ListViewBase } from "../../components/list_view.slint";
+import { ListView, ListContainer } from "../../components/list_view.slint";
 import { ControlHint } from "../../components/control_hint.slint";
 import { CoreListEntry } from "types.slint";
 import { ScrollingText } from "../../components/scrolling_text.slint";
 
-component CoreListItem inherits HorizontalLayout {
+component CoreListItem inherits Rectangle {
     in property <CoreListEntry> core;
-    in property <bool> is-selected;
-    padding: 2px;
-    spacing: 6px;
+    in property <bool> focused;
 
-    // On a 240 px wide UI (rev 1/2) 160 + 80 px of minimum widths don't fit, which pushed the
-    // author out of the list; smaller minimums keep both columns visible.
-    // GB-174: plain elided texts on the rows, the scrolling texts only on the selected row.
-    if !is-selected: Text {
-        text: core.core-name;
-        color: Theme.fg;
-        overflow: elide;
-        vertical-alignment: center;
-        min-width: 120px;
-        horizontal-stretch: 2.0;
-    }
-    // Scroll the name and author of the selected core if they don't fit.
-    if is-selected: ScrollingText {
-        text: core.core-name;
-        active: true;
-        min-width: 120px;
-        horizontal-stretch: 2.0;
-    }
+    background: root.focused ? Theme.highlight : transparent;
 
-    if !is-selected: Text {
-        text: core.core-author;
-        color: Theme.text-secondary;
-        horizontal-alignment: right;
-        overflow: elide;
-        vertical-alignment: center;
-        min-width: 60px;
-        horizontal-stretch: 1.0;
-    }
-    if is-selected: ScrollingText {
-        text: core.core-author;
-        text-color: Theme.text-secondary;
-        align: TextHorizontalAlignment.right;
-        active: true;
-        min-width: 60px;
-        horizontal-stretch: 1.0;
+    HorizontalLayout {
+        padding: 2px;
+        spacing: 6px;
+        height: 100%;
+
+        // On a 240 px wide UI (rev 1/2) 160 + 80 px of minimum widths don't fit, which pushed the
+        // author out of the list; smaller minimums keep both columns visible.
+        // GB-174: plain elided texts on the rows, the scrolling texts only on the selected row.
+        if !root.focused: Text {
+            text: core.core-name;
+            color: Theme.fg;
+            horizontal-alignment: left;
+            vertical-alignment: center;
+            overflow: elide;
+            min-width: 120px;
+            horizontal-stretch: 2.0;
+        }
+        // Scroll the name and author of the selected core if they don't fit.
+        if root.focused: ScrollingText {
+            text: core.core-name;
+            active: true;
+            min-width: 120px;
+            horizontal-stretch: 2.0;
+        }
+
+        if !root.focused: Text {
+            text: core.core-author;
+            color: Theme.text-secondary;
+            horizontal-alignment: right;
+            vertical-alignment: center;
+            overflow: elide;
+            min-width: 60px;
+            horizontal-stretch: 1.0;
+        }
+        if root.focused: ScrollingText {
+            text: core.core-author;
+            text-color: Theme.text-secondary;
+            align: TextHorizontalAlignment.right;
+            active: true;
+            min-width: 60px;
+            horizontal-stretch: 1.0;
+        }
     }
 }
 
+component CoreListBase inherits ListView {
+    in property <[CoreListEntry]> model;
+    num-items: model.length;
+
+    for item[index] in root.model: CoreListItem {
+        height: 20px;
+        core: item;
+        focused: index == root.current-item;
+    }
+}
 
 export component CoreList {
     in property <[CoreListEntry]> cores;
@@ -57,7 +74,7 @@ export component CoreList {
     callback on-cancel();
     callback on-core-selected(/* selected-item */ int);
 
-    forward-focus: i-list;
+    forward-focus: i-focus-scope;
 
     // Loading box
     if is-loading: Rectangle {
@@ -81,30 +98,41 @@ export component CoreList {
     i-focus-scope := FocusScope {
         key-pressed(event) => {
             if (is-loading) {
-                reject
+                return reject;
+            } else if (event.text == Key.UpArrow) {
+                i-list.select-up();
+                return accept;
+            } else if (event.text == Key.DownArrow) {
+                i-list.select-down();
+                return accept;
+            } else if (event.text == "a" && !event.repeat && i-list.has-selection()) {
+                on-core-selected(i-list.current-item);
+                return accept;
             } else if (event.text == "b") {
                 on-cancel();
-                accept
-            } else {
-                reject
+                return accept;
+            } else if (event.text == "l") {
+                i-list.select-page-up();
+                return accept;
+            } else if (event.text == "r") {
+                i-list.select-page-down();
+                return accept;
             }
+            reject
         }
 
         VerticalLayout {
             spacing: 2px;
 
-            i-list := ListViewBase {
-                num-items: cores.length;
-                wrap: true;
-                focus-item <=> Backend.core-list-index;
+            ListContainer {
+                viewport-y: i-list.viewport-y;
+                viewport-height: i-list.viewport-height;
+                visible-height: i-list.visible-height;
 
-                for item[index] in cores: child-items := CoreListItem {
-                    core: item;
-                    is-selected: index == i-list.focus-item;
-                }
-
-                on-item-selected(i) => {
-                    on-core-selected(i);
+                i-list := CoreListBase {
+                    model: root.cores;
+                    wrap: true;
+                    current-item <=> Backend.core-list-index;
                 }
             }
 

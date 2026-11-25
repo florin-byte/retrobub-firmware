@@ -1,0 +1,11 @@
+[package]
+name = "disc_host_tests"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+log = "0.4"
+serde_json = "1"

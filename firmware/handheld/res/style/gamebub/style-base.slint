@@ -1,0 +1,18 @@
+// Retro Bub: the colors follow `color-scheme` (upstream's are fixed), because our themes and dark
+// mode rely on the style to color every Text without an explicit color (see res/ui/theme.slint and
+// set-color-scheme in main.slint). The values are those of the std-widgets style used before.
+export global Palette {
+    in-out property <ColorScheme> color-scheme: ColorScheme.light;
+    out property <brush> background: color-scheme == ColorScheme.dark ? #1C1C1C : #E8E8E8;
+    out property <brush> foreground: color-scheme == ColorScheme.dark ? #FFFFFF : #000000E6;
+    out property <brush> selection-background: color-scheme == ColorScheme.dark ? #505050 : #BBBBBB;
+    out property <brush> selection-foreground: color-scheme == ColorScheme.dark ? #FFFFFF : #000000;
+}
+
+export global StyleMetrics {
+    out property <length> layout-spacing: 0px;
+    out property <length> layout-padding: 0px;
+    out property <length> text-cursor-width: 1px;
+    out property <brush> window-background: Palette.background;
+    out property <brush> default-text-color: Palette.foreground;
+}

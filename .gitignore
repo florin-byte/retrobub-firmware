@@ -357,3 +357,6 @@ project/plugins/project/
 hs_err_pid*
 
 
+
+# Generated disc fixtures of the host tests
+/firmware/handheld/host_tests/disc/fixtures/
